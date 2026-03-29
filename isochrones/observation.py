@@ -1,5 +1,23 @@
+"""Observation tree classes for stellar parameter fitting.
+
+This module provides tree-based data structures for representing stellar
+observations and their hierarchical relationships, including photometric
+measurements, spectroscopic data, and model evaluation.
+
+Classes:
+    Node: Base tree node class.
+    ModelNode: Node representing a model with evaluation capabilities.
+    Source: Leaf node representing an observational source.
+    Observation: Node representing an observation.
+    ObservationTree: Hierarchical tree of observations and sources.
+"""
+
 from __future__ import print_function, division
-import os, re, sys
+
+import os
+import re
+import sys
+from typing import TYPE_CHECKING, Optional, Any, Dict, List, Union, Tuple
 
 from .config import on_rtd
 from .logger import getLogger
@@ -16,48 +34,56 @@ if not on_rtd:
 
     from itertools import chain, count
 
-    try:
-        from itertools import imap, izip
-    except ImportError:  # Python 3
-        imap = map
-        izip = zip
-        xrange = range
-
     LOG_ONE_OVER_ROOT_2PI = np.log(1.0 / np.sqrt(2 * np.pi))
-else:
 
-    class Traversal(object):
-        pass
-
-    class LeftAligned(object):
-        pass
-
+imap = map
+izip = zip
 
 from .isochrone import get_ichrone
 from .utils import addmags, distance, fast_addmags
 
 
 class NodeTraversal(Traversal):
-    """
-    Custom subclass to traverse tree for ascii printing
+    """Custom subclass to traverse tree for ASCII printing.
+
+    This traversal class is used to render observation trees as ASCII
+    diagrams, optionally showing model values and likelihoods.
     """
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        """Initialize the node traversal.
+
+        Args:
+            pars: Optional dictionary of parameter values for displaying
+                model evaluations.
+            **kwargs: Additional keyword arguments passed to parent class.
+        """
         self.pars = pars
         super(NodeTraversal, self).__init__(**kwargs)
 
-    def get_children(self, node):
+    def get_children(self, node: "Node") -> List["Node"]:
+        """Get children of a node."""
         return node.children
 
-    def get_root(self, node):
+    def get_root(self, node: "Node") -> "Node":
+        """Get the root node."""
         return node
-        return node.get_root()
 
-    def get_text(self, node):
+    def get_text(self, node: "Node") -> str:
+        """Get the text representation of a node.
+
+        Args:
+            node: The node to get text for.
+
+        Returns:
+            str: ASCII representation of the node.
+        """
         text = node.label
         if self.pars is not None:
             if hasattr(node, "model_mag"):
-                text += "; model={:.2f} ({})".format(node.model_mag(self.pars), node.lnlike(self.pars))
+                text += "; model={:.2f} ({})".format(
+                    node.model_mag(self.pars), node.lnlike(self.pars)  # type: ignore[attr-defined]
+                )
             if type(node) == ModelNode:
                 root = node.get_root()
                 if hasattr(root, "spectroscopy"):
@@ -73,7 +99,6 @@ class NodeTraversal(Traversal):
                             text += ", {} limits={}".format(k, v)
                 if hasattr(root, "parallax"):
                     if node.index in root.parallax:
-                        # Warning, this not tested; may break ->
                         plx, u_plx = root.parallax[node.index]
                         text += ", parallax={}".format((plx, u_plx))
                         modval = node.evaluate(self.pars[node.label], "parallax")
@@ -81,7 +106,6 @@ class NodeTraversal(Traversal):
                         text += "; model={} ({})".format(modval, lnl)
                 if hasattr(root, "AV"):
                     if node.index in root.AV:
-                        # Warning, this not tested; may break ->
                         AV, u_AV = root.AV[node.index]
                         text += ", AV={}".format((AV, u_AV))
                         modval = node.evaluate(self.pars[node.label], "AV")
@@ -104,67 +128,118 @@ class NodeTraversal(Traversal):
                     if node.label in root.limits:
                         for k, v in root.limits[node.label].items():
                             text += ", {} limits={}".format(k, v)
-                # root = node.get_root()
-                # if hasattr(root,'spectroscopy'):
-                #    if node.label in root.spectroscopy:
-                #        for k,v in root.spectroscopy[node.label].items():
-                #            model = node.evaluate(self.pars[node.label], k)
-                #            text += '\n  {}={} (model={})'.format(k,v,model)
         return text
 
 
 class MyLeftAligned(LeftAligned):
-    """For custom ascii tree printing
+    """For custom ASCII tree printing.
+
+    This class renders observation trees as ASCII diagrams with
+    optional parameter display.
     """
 
-    pars = None
+    pars: Optional[Dict[str, Any]] = None
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        """Initialize the left-aligned tree renderer.
+
+        Args:
+            pars: Optional dictionary of parameter values for displaying
+                model evaluations.
+            **kwargs: Additional keyword arguments passed to parent class.
+        """
         self.pars = pars
         self.traverse = NodeTraversal(pars)
         super(MyLeftAligned, self).__init__(**kwargs)
 
 
-class Node(object):
-    def __init__(self, label):
+class Node:
+    """Base tree node class for observation hierarchy.
 
-        self.label = label
-        self.parent = None
-        self.children = []
-        self._leaves = None
+    This class provides the basic tree structure for representing
+    hierarchical relationships between observations, sources, and models.
+
+    Attributes:
+        label: The name/identifier for this node.
+        parent: The parent node, or None if this is the root.
+        children: List of child nodes.
+    """
+
+    def __init__(self, label: str) -> None:
+        """Initialize a Node.
+
+        Args:
+            label: The name/identifier for this node.
+        """
+        self._label: str = label
+        self.parent: Optional["Node"] = None
+        self.children: List["Node"] = []
+        self._leaves: Optional[List["Node"]] = None
+        self.limits: Dict[str, Dict[str, Tuple[float, float]]] = {}
+        self.parallax: Dict[int, Tuple[float, float]] = {}
+        self.AV: Dict[int, Tuple[float, float]] = {}
+
+    @property
+    def label(self) -> str:
+        return self._label
 
     def __iter__(self):
-        """
-        Iterate through tree, leaves first
-
-        following http://stackoverflow.com/questions/6914803/python-iterator-through-tree-with-list-of-children
-        """
+        """Iterate through tree, leaves first."""
         for node in chain(*imap(iter, self.children)):
             yield node
         yield self
 
-    def __getitem__(self, ind):
+    def __getitem__(self, ind: int) -> "Node":
+        """Get node by index.
+
+        Args:
+            ind: Index of the node in the tree iteration order.
+
+        Returns:
+            The node at the specified index.
+        """
         for n, i in izip(self, count()):
             if i == ind:
                 return n
+        raise IndexError("Node index out of range")
 
     @property
-    def is_root(self):
+    def is_root(self) -> bool:
+        """Check if this node is the root of the tree."""
         return self.parent is None
 
-    def get_root(self):
+    def get_root(self) -> "Node":
+        """Get the root node of the tree.
+
+        Returns:
+            The root node.
+        """
         if self.is_root:
             return self
         else:
-            return self.parent.get_root()
+            if self.parent:
+                return self.parent.get_root()
+            return self
 
-    def get_ancestors(self):
-        if self.parent.is_root:
+    def get_ancestors(self) -> List["Node"]:
+        """Get all ancestor nodes from parent to root.
+
+        Returns:
+            List of ancestor nodes, excluding the root.
+        """
+        if self.parent is None or self.parent.is_root:
             return []
         else:
-            return [self.parent] + self.parent.get_ancestors()
+            return [self.parent] + self.parent.get_ancestors()  # type: ignore[return-value]
 
-    def print_ascii(self, fout=None, pars=None):
+    def print_ascii(self, fout: Optional[Any] = None, pars: Optional[Dict[str, Any]] = None) -> None:
+        """Print the tree as an ASCII diagram.
+
+        Args:
+            fout: Optional file-like object to write to. If None, prints to stdout.
+            pars: Optional dictionary of parameter values for displaying
+                model evaluations.
+        """
         box_tr = MyLeftAligned(pars, draw=BoxStyle(gfx=BOX_DOUBLE, horiz_len=1))
         if fout is None:
             print(box_tr(self))
@@ -172,30 +247,37 @@ class Node(object):
             fout.write(box_tr(self))
 
     @property
-    def is_leaf(self):
+    def is_leaf(self) -> bool:
+        """Check if this node is a leaf (has no children and is not the root)."""
         return len(self.children) == 0 and not self.is_root
 
-    def _clear_leaves(self):
+    def _clear_leaves(self) -> None:
+        """Clear the cached leaves list."""
         self._leaves = None
 
-    def _clear_all_leaves(self):
-        if not self.is_root:
+    def _clear_all_leaves(self) -> None:
+        """Clear leaves cache for this node and all ancestors."""
+        if self.parent is not None:
             self.parent._clear_all_leaves()
         self._clear_leaves()
 
-    def add_child(self, node):
+    def add_child(self, node: "Node") -> None:
+        """Add a child node.
+
+        Args:
+            node: The node to add as a child.
+        """
         node.parent = self
         self.children.append(node)
         self._clear_all_leaves()
 
-    def remove_children(self):
+    def remove_children(self) -> None:
+        """Remove all child nodes."""
         self.children = []
         self._clear_all_leaves()
 
-    def remove_child(self, label):
-        """
-        Removes node by label
-        """
+    def remove_child(self, label: str) -> None:
+        """Remove a child node by label."""
         ind = None
         for i, c in enumerate(self.children):
             if c.label == label:
@@ -303,89 +385,133 @@ class Node(object):
 
 
 class ObsNode(Node):
-    def __init__(self, observation, source, ref_node=None):
+    """Observation node in the observation tree.
 
-        self.observation = observation
-        self.source = source
-        self.reference = ref_node
+    This class represents an observation (photometric measurement) in the
+    hierarchical observation tree. It connects a specific observation and
+    source to potential model nodes for stellar parameter fitting.
 
-        self.children = []
-        self.parent = None
-        self._leaves = None
+    Attributes:
+        observation: The Observation object containing observation metadata.
+        source: The Source object containing the measurement data.
+        reference: Optional reference ObsNode for relative photometry.
+    """
 
-        # indices of underlying models, defining physical systems
-        self._inds = None
-        self._n_params = None
-        self._Nstars = None
+    def __init__(
+        self,
+        observation: "Observation",
+        source: "Source",
+        ref_node: Optional["ObsNode"] = None
+    ) -> None:
+        """Initialize an ObsNode.
 
-        # for model_mag caching
-        self._cache_key = None
-        self._cache_val = None
+        Args:
+            observation: The Observation object with metadata.
+            source: The Source object with measurement data.
+            ref_node: Optional reference node for differential photometry.
+        """
+        self.observation: Optional["Observation"] = observation
+        self.source: Optional["Source"] = source
+        self.reference: Optional["ObsNode"] = ref_node
+
+        self.children: List["Node"] = []
+        self.parent: Optional["Node"] = None
+        self._leaves: Optional[List["Node"]] = None
+
+        self._inds: Optional[List[int]] = None
+        self._n_params: Optional[int] = None
+        self._Nstars: Optional[Dict[int, int]] = None
+
+        self._cache_key: Optional[tuple] = None
+        self._cache_val: Optional[float] = None
 
     @property
-    def instrument(self):
+    def instrument(self) -> str:
+        """The instrument name for this observation."""
+        assert self.observation is not None
         return self.observation.name
 
     @property
-    def band(self):
+    def band(self) -> str:
+        """The photometric band for this observation."""
+        assert self.observation is not None
         return self.observation.band
 
     @property
-    def value(self):
+    def value(self) -> Tuple[Any, Any]:
+        """The (magnitude, error) tuple for this observation."""
+        assert self.source is not None
         return (self.source.mag, self.source.e_mag)
 
     @property
-    def resolution(self):
+    def resolution(self) -> float:
+        """The spatial resolution of the observation."""
+        assert self.observation is not None
         return self.observation.resolution
 
     @property
-    def relative(self):
+    def relative(self) -> bool:
+        """Whether this is a relative/differential measurement."""
+        assert self.source is not None
         return self.source.relative
 
     @property
-    def separation(self):
+    def separation(self) -> float:
+        """Angular separation from the reference position."""
+        assert self.source is not None
         return self.source.separation
 
     @property
-    def pa(self):
+    def pa(self) -> float:
+        """Position angle from the reference position."""
+        assert self.source is not None
         return self.source.pa
 
     @property
-    def value_str(self):
+    def value_str(self) -> str:
+        """String representation of the magnitude and error."""
         return "({:.2f}, {:.2f})".format(*self.value)
 
-    def distance(self, other):
-        """Coordinate distance from another ObsNode
+    def distance(self, other: "ObsNode") -> float:
+        """Calculate coordinate distance from another ObsNode.
+
+        Args:
+            other: Another ObsNode to calculate distance to.
+
+        Returns:
+            float: Angular separation between the two observations.
         """
         return distance((self.separation, self.pa), (other.separation, other.pa))
 
-    def _in_same_observation(self, other):
+    def _in_same_observation(self, other: "ObsNode") -> bool:
+        """Check if two ObsNodes are from the same instrument and band."""
         return self.instrument == other.instrument and self.band == other.band
 
     @property
-    def n_params(self):
+    def n_params(self) -> int:
+        """Number of free parameters for this observation."""
         if self._n_params is None:
             self._n_params = 5 * len(self.leaves)
         return self._n_params
 
-    def _get_inds(self):
+    def _get_inds(self) -> List[int]:
+        """Get unique sorted indices of model systems."""
         inds = [n.index for n in self.leaves]
         inds = sorted(list(set(inds)))
         return inds
 
-    def _clear_leaves(self):
+    def _clear_leaves(self) -> None:
+        """Clear cached values when leaves change."""
         self._leaves = None
         self._inds = None
         self._n_params = None
         self._Nstars = None
 
     @property
-    def Nstars(self):
-        """
-        dictionary of number of stars per system
-        """
+    def Nstars(self) -> Dict[int, int]:
+        """Dictionary of number of stars per system."""
         if self._Nstars is None:
-            N = {}
+            N: Dict[int, int] = {}
             for n in self.get_model_nodes():
                 if n.index not in N:
                     N[n.index] = 1
@@ -395,18 +521,22 @@ class ObsNode(Node):
         return self._Nstars
 
     @property
-    def systems(self):
+    def systems(self) -> List[int]:
+        """List of unique system indices."""
         lst = sorted(self.Nstars.keys())
         return lst
 
     @property
-    def inds(self):
+    def inds(self) -> List[int]:
+        """Unique sorted indices of model systems."""
         if self._inds is None:
             self._inds = self._get_inds()
         return self._inds
 
     @property
-    def label(self):
+    def label(self) -> str:
+        """String label for this observation node."""
+        assert self.source is not None
         if self.source.relative:
             band_str = "delta-{}".format(self.band)
         else:
@@ -492,73 +622,107 @@ class ObsNode(Node):
 
 
 class DummyObsNode(ObsNode):
-    def __init__(self, *args, **kwargs):
-        self.observation = None
-        self.source = None
-        self.reference = None
+    """Dummy observation node for placeholder/inactive observations.
 
-        self.children = []
-        self.parent = None
-        self._leaves = None
+    This class is used as a placeholder when an observation node needs
+    to be temporarily disabled or when no observation is available.
+    """
 
-        # indices of underlying models, defining physical systems
-        self._inds = None
-        self._n_params = None
-        self._Nstars = None
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize a DummyObsNode."""
+        self.observation: Optional["Observation"] = None
+        self.source: Optional["Source"] = None
+        self.reference: Optional["ObsNode"] = None
 
-        # for model_mag caching
-        self._cache_key = None
-        self._cache_val = None
+        self.children: List["Node"] = []
+        self.parent: Optional["Node"] = None
+        self._leaves: Optional[List["Node"]] = None
+
+        self._inds: Optional[List[int]] = None
+        self._n_params: Optional[int] = None
+        self._Nstars: Optional[Dict[int, int]] = None
+
+        self._cache_key: Optional[tuple] = None
+        self._cache_val: Optional[float] = None
 
     @property
-    def label(self):
+    def label(self) -> str:
+        """String label for dummy node."""
         return "[dummy]"
 
     @property
-    def value(self):
+    def value(self) -> Tuple[None, None]:
+        """Value returns None for dummy node."""
         return None, None
 
-    def lnlike(self, *args, **kwargs):
+    def lnlike(self, *args: Any, **kwargs: Any) -> float:
+        """Log-likelihood is always zero for dummy node."""
         return 0
 
 
 class ModelNode(Node):
-    """
-    These are always leaves; leaves are always these.
+    """Model node representing a stellar model in the observation tree.
 
-    Index keeps track of which physical system node is in.
+    ModelNodes are always leaf nodes that connect to isochrone models
+    for stellar parameter evaluation. The index keeps track of which
+    physical system (star) the node belongs to.
+
+    Attributes:
+        index: Index of the physical system this model represents.
+        tag: Additional tag for distinguishing multiple models in same system.
     """
 
-    def __init__(self, ic, index=0, tag=0):
+    def __init__(self, ic: Any, index: int = 0, tag: int = 0) -> None:
+        """Initialize a ModelNode.
+
+        Args:
+            ic: The isochrone/interpolator object.
+            index: Index of the physical system (star).
+            tag: Additional tag for multiple models in same system.
+        """
         self._ic = ic
         self.index = index
         self.tag = tag
 
-        self.children = []
-        self.parent = None
-        self._leaves = None
+        self.children: List["Node"] = []
+        self.parent: Optional["Node"] = None
+        self._leaves: Optional[List["Node"]] = None
 
     @property
-    def label(self):
+    def label(self) -> str:
+        """String label for this model node."""
         return "{}_{}".format(self.index, self.tag)
 
     @property
-    def ic(self):
+    def ic(self) -> Any:
+        """The isochrone interpolator (lazy initialization)."""
         if type(self._ic) == type:
             self._ic = self._ic()
         return self._ic
 
-    def get_obs_ancestors(self):
+    def get_obs_ancestors(self) -> List["ObsNode"]:
+        """Get all observation ancestors in the tree."""
         nodes = self.get_ancestors()
         return [n for n in nodes if isinstance(n, ObsNode)]
 
     @property
-    def contributing_observations(self):
-        """The instrument-band for all the observations feeding into this model node
-        """
+    def contributing_observations(self) -> List[str]:
+        """The instrument-band pairs for all observations feeding this model."""
         return [n.obsname for n in self.get_obs_ancestors()]
 
-    def evaluate(self, p, prop):
+    def evaluate(self, p: Tuple[float, ...], prop: str) -> float:
+        """Evaluate a stellar property from model parameters.
+
+        Args:
+            p: Tuple of (mass, age, feh) parameters.
+            prop: Property name to evaluate ('mass', 'age', 'feh', 'Teff', etc.)
+
+        Returns:
+            float: The evaluated property value.
+
+        Raises:
+            ValueError: If the property cannot be evaluated.
+        """
         if prop in self.ic.bands:
             return self.evaluate_mag(p, prop)
         elif prop == "mass":
@@ -572,15 +736,49 @@ class ModelNode(Node):
         else:
             raise ValueError("property {} cannot be evaluated by Isochrone.".format(prop))
 
-    def evaluate_mag(self, p, band):
+    def evaluate_mag(self, p: Tuple[float, ...], band: str) -> float:
+        """Evaluate magnitude in a specific band."""
         return self.ic.mag[band](*p)
 
-    def lnlike(self, *args, **kwargs):
+    def lnlike(self, *args: Any, **kwargs: Any) -> float:
+        """Log-likelihood for model node (always zero, computed at ObsNode)."""
         return 0
 
 
-class Source(object):
-    def __init__(self, mag, e_mag, separation=0.0, pa=0.0, relative=False, is_reference=False):
+class Source:
+    """Represents an observational measurement (photometry).
+
+    This class stores photometric measurement data including magnitude,
+    uncertainty, and position information for differential photometry.
+
+    Attributes:
+        mag: The measured magnitude.
+        e_mag: The magnitude uncertainty.
+        separation: Angular separation from reference position.
+        pa: Position angle from reference position.
+        relative: Whether this is a relative/differential measurement.
+        is_reference: Whether this is a reference source.
+    """
+
+    def __init__(
+        self,
+        mag: float,
+        e_mag: float,
+        separation: float = 0.0,
+        pa: float = 0.0,
+        relative: bool = False,
+        is_reference: bool = False
+    ) -> None:
+        """Initialize a Source.
+
+        Args:
+            mag: Measured magnitude.
+            e_mag: Magnitude uncertainty.
+            separation: Angular separation from reference (degrees).
+            pa: Position angle from reference (degrees).
+            relative: Whether this is a relative measurement.
+            is_reference: Whether this is the reference source.
+        """
         self.mag = float(mag)
         self.e_mag = float(e_mag)
         self.separation = float(separation)
@@ -588,32 +786,43 @@ class Source(object):
         self.relative = bool(relative)
         self.is_reference = bool(is_reference)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "({}, {}) @({}, {})".format(self.mag, self.e_mag, self.separation, self.pa)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.__str__()
 
 
-class Star(object):
-    """Theoretical counterpart of Source.
+class Star:
+    """Theoretical counterpart of a Source.
+
+    Represents a model star with parameters and position for comparison
+    with observed Sources.
     """
 
-    def __init__(self, pars, separation, pa):
+    def __init__(self, pars: Dict[str, float], separation: float, pa: float) -> None:
+        """Initialize a Star.
+
+        Args:
+            pars: Dictionary of stellar parameters.
+            separation: Angular separation from reference.
+            pa: Position angle from reference.
+        """
         self.pars = pars
         self.separation = separation
         self.pa = pa
 
-    def distance(self, other):
+    def distance(self, other: "Star") -> float:
+        """Calculate angular separation from another Star."""
         return distance((self.separation, self.pa), (other.separation, other.pa))
 
 
-class Observation(object):
-    """
-    Contains relevant information about imaging observation
+class Observation:
+    """Contains relevant information about an imaging observation.
 
-    name: identifying string (typically the instrument)
-    band: photometric bandpass
+    Attributes:
+        name: Identifying string (typically the instrument name).
+        band: Photometric bandpass name.
     resolution: *approximate* angular resolution of instrument.
          used for source matching between observations
     sources: list of Source objects
@@ -711,94 +920,124 @@ class Observation(object):
 
 
 class ObservationTree(Node):
-    """Builds a tree of Nodes from a list of Observation objects
+    """Hierarchical tree structure for organizing stellar observations.
 
-    Organizes Observations from smallest to largest resolution,
-    and at each stage attaches each source to the most probable
-    match from the previous Observation.  Admittedly somewhat hack-y,
-    but should *usually* do the right thing.  Check out `obs.print_ascii()`
-    to visualize what this has done.
+    Builds a tree of Nodes from a list of Observation objects. Organizes
+    Observations from smallest to largest resolution, and at each stage
+    attaches each source to the most probable match from the previous
+    Observation. This allows modeling of multiple stars in a system with
+    relative photometry.
+
+    The tree structure allows matching observations across different
+    instruments/bands while accounting for resolution differences.
+
+    Attributes:
+        spectroscopy: Dictionary of spectroscopic constraints (e.g., Teff, logg).
+        limits: Dictionary of parameter limits.
+        parallax: Dictionary of parallax measurements.
+        AV: Dictionary of extinction values.
     """
 
-    spec_props = ["Teff", "logg", "feh", "density"]
+    spec_props: List[str] = ["Teff", "logg", "feh", "density"]
 
-    def __init__(self, observations=None, name=None):
+    def __init__(
+        self,
+        observations: Optional[List["Observation"]] = None,
+        name: Optional[str] = None
+    ) -> None:
+        """Initialize an ObservationTree.
 
+        Args:
+            observations: List of Observation objects to add to the tree.
+            name: Optional name for the tree root.
+        """
         if observations is None:
             observations = []
 
         if name is None:
-            self.label = "root"
+            self.label: str = "root"
         else:
             self.label = name
-        self.parent = None
+        self.parent: Optional["Node"] = None
 
-        self._observations = []
+        self._observations: List["Observation"] = []
         self._build_tree()
 
         [self.add_observation(obs) for obs in observations]
 
-        self._N = None
-        self._index = None
+        self._N: Optional[int] = None
+        self._index: Optional[int] = None
 
-        # Spectroscopic properties
-        self.spectroscopy = {}
+        self.spectroscopy: Dict[str, Dict[str, Tuple[float, float]]] = {}
 
-        # Limits (such as minimum on logg)
-        self.limits = {}
+        self.limits: Dict[str, Dict[str, Tuple[float, float]]] = {}
 
-        # Parallax measurements
-        self.parallax = {}
+        self.parallax: Dict[int, Tuple[float, float]] = {}
 
-        # AV priors
-        self.AV = {}
+        self.AV: Dict[int, Tuple[float, float]] = {}
 
-        # This will be calculated and set at first access
-        self._Nstars = None
+        self._Nstars: Optional[int] = None
 
-        # likelihood cache
-        self._cache_key = None
-        self._cache_val = None
+        self._cache_key: Optional[tuple] = None
+        self._cache_val: Optional[float] = None
 
     @property
-    def name(self):
+    def name(self) -> str:
+        """Name of the observation tree."""
         return self.label
 
-    def _clear_cache(self):
+    def _clear_cache(self) -> None:
+        """Clear the likelihood cache."""
         self._cache_key = None
         self._cache_val = None
 
     @classmethod
-    def from_df(cls, df, **kwargs):
-        """
-        DataFrame must have the right columns.
+    def from_df(cls, df: pd.DataFrame, **kwargs: Any) -> "ObservationTree":
+        """Create an ObservationTree from a pandas DataFrame.
 
-        these are: name, band, resolution, mag, e_mag, separation, pa
+        Args:
+            df: DataFrame with columns: name, band, resolution, mag, e_mag,
+                separation, pa, relative.
+            **kwargs: Additional arguments passed to the constructor.
+
+        Returns:
+            ObservationTree: The constructed observation tree.
+
+        Raises:
+            KeyError: If required columns are missing from DataFrame.
         """
         tree = cls(**kwargs)
 
         for (n, b), g in df.groupby(["name", "band"]):
-            # g.sort('separation', inplace=True) #ensures that the first is reference
             sources = [
                 Source(**s[["mag", "e_mag", "separation", "pa", "relative"]]) for _, s in g.iterrows()
             ]
             obs = Observation(n, b, g.resolution.mean(), sources=sources, relative=g.relative.any())
             tree.add_observation(obs)
 
-        # For all relative mags, set reference to be brightest
-
         return tree
 
     @classmethod
-    def from_ini(cls, filename):
-        config = ConfigObj(filename)
+    def from_ini(cls, filename: str) -> "ObservationTree":
+        """Create an ObservationTree from an INI config file.
 
-    def to_df(self):
+        Args:
+            filename: Path to the INI configuration file.
+
+        Returns:
+            ObservationTree: The constructed observation tree.
         """
-        Returns DataFrame with photometry from observations organized.
+        config = ConfigObj(filename)
+        tree = cls()
+        # TODO: implement parsing of config into observation tree
+        return tree
 
-        This DataFrame should be able to be read back in to
-        reconstruct the observation.
+    def to_df(self) -> pd.DataFrame:
+        """Convert observations to a pandas DataFrame.
+
+        Returns:
+            DataFrame with columns: name, band, resolution, mag, e_mag,
+            separation, pa, relative.
         """
         df = pd.DataFrame()
         name = []
@@ -856,7 +1095,7 @@ class ObservationTree(Node):
                 store.close()
 
         df = self.to_df()
-        df.to_hdf(filename, path + "/df", format="table")
+        df.to_hdf(filename, key=path + "/df", format="table")
         with pd.HDFStore(filename) as store:
             # store = pd.HDFStore(filename)
             attrs = store.get_storer(path + "/df").attrs

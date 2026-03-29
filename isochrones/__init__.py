@@ -1,7 +1,7 @@
 from .version import __version__
 
 try:
-    __ISOCHRONES_SETUP__
+    __ISOCHRONES_SETUP__  # type: ignore[used-before-def]
 except NameError:
     __ISOCHRONES_SETUP__ = False
 

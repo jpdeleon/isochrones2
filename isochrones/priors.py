@@ -1,11 +1,28 @@
+"""Prior probability distributions for stellar parameter estimation.
+
+This module provides prior probability distribution classes for Bayesian
+stellar parameter inference. It includes both simple priors (uniform, normal)
+and astrophysically-motivated priors (Salpeter IMF, metallicity distributions).
+
+Classes:
+    Prior: Base class for prior distributions.
+    FlatPrior: Uniform prior within specified bounds.
+    NormalPrior: Gaussian prior.
+    LogNormalPrior: Log-normal prior.
+    SalpeterIMF: Salpeter initial mass function prior.
+    and others...
+"""
+
 from __future__ import print_function, division
+from __future__ import annotations
+
+from typing import Optional, Tuple, Any, Union
 
 import numpy as np
 import pandas as pd
 import scipy.stats
 from scipy.stats import uniform, lognorm
 from scipy.integrate import quad
-from scipy.stats._continuous_distns import _norm_pdf, _norm_cdf, _norm_logpdf
 
 import matplotlib.pyplot as plt
 import numba as nb
@@ -20,27 +37,62 @@ _norm_pdf_logC = np.log(_norm_pdf_C)
 LOG_ONE_OVER_ROOT_2PI = np.log(ONE_OVER_ROOT_2PI)
 
 
-def _norm_pdf(x):
+def _norm_pdf(x: float) -> float:
+    """Compute unnormalized normal PDF."""
     return np.exp(-(x ** 2) / 2.0) / _norm_pdf_C
 
 
-def _norm_logpdf(x):
+def _norm_logpdf(x: float) -> float:
+    """Compute log of unnormalized normal PDF."""
     return -(x ** 2) / 2.0 - _norm_pdf_logC
 
 
-class Prior(object):
-    def __init__(self, *args, **kwargs):
-        self._norm = 1.0
+class Prior:
+    """Base class for prior probability distributions.
 
-    def __call__(self, x, **kwargs):
+    This class provides a common interface for prior distributions used in
+    Bayesian stellar parameter estimation. Subclasses should implement the
+    _pdf method to define the unnormalized probability density function.
+
+    Attributes:
+        bounds: Tuple of (lower, upper) bounds for the prior support.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the prior."""
+        self._norm: float = 1.0
+        if not hasattr(self, "_bounds"):
+            self._bounds: Optional[Tuple[float, float]] = None
+
+    def __call__(self, x: float, **kwargs: Any) -> float:
+        """Evaluate the prior probability density.
+
+        Args:
+            x: Value at which to evaluate the PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Probability density at x.
+        """
         return self.pdf(x, **kwargs)
 
     @property
-    def bounds(self):
-        return (-np.inf, np.inf) if getattr(self, "_bounds", None) is None else self._bounds
+    def bounds(self) -> Tuple[float, float]:
+        """The bounds of the prior distribution."""
+        if getattr(self, "_bounds", None) is None:
+            return (-np.inf, np.inf)
+        return self._bounds  # type: ignore[return-value]
 
     @bounds.setter
-    def bounds(self, new):
+    def bounds(self, new: Tuple[float, float]) -> None:
+        """Set the bounds and normalize the prior.
+
+        Args:
+            new: Tuple of (lower, upper) bounds.
+
+        Raises:
+            ValueError: If the integral test fails.
+        """
         self._norm = quad(self._pdf, *new)[0]
         self._bounds = new
         try:
@@ -48,33 +100,81 @@ class Prior(object):
         except AssertionError:
             raise ValueError(f"Problem setting bounds to {new}; integral test failed.")
 
-    def _pdf(self, x, **kwargs):
+    def _pdf(self, x: float, **kwargs: Any) -> float:
+        """Compute the unnormalized probability density.
+
+        This method must be implemented by subclasses.
+
+        Args:
+            x: Value at which to evaluate the PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Unnormalized probability density at x.
+        """
         raise NotImplementedError
 
-    def pdf(self, x, **kwargs):
+    def pdf(self, x: float, **kwargs: Any) -> float:
+        """Compute the normalized probability density.
+
+        Args:
+            x: Value at which to evaluate the PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Normalized probability density at x, or 0 if outside bounds.
+        """
         lo, hi = self.bounds
         if x < lo or x > hi:
             return 0
         else:
             return self._pdf(x, **kwargs) / self._norm
 
-    def lnpdf(self, x, **kwargs):
+    def lnpdf(self, x: float, **kwargs: Any) -> float:
+        """Compute the log probability density.
+
+        Args:
+            x: Value at which to evaluate the log PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Log probability density at x, or -inf if probability is zero.
+        """
         if hasattr(self, "_lnpdf"):
             return self._lnpdf(x, **kwargs)
         else:
             pdf = self(x, **kwargs)
             return np.log(pdf) if pdf else -np.inf
 
-    def sample(self, n):
+    def sample(self, n: int, **kwargs: Any) -> Union[float, np.ndarray]:
+        """Draw samples from the prior distribution.
+
+        Args:
+            n: Number of samples to draw.
+            **kwargs: Additional keyword arguments for sampling.
+
+        Returns:
+            Array of samples, or single sample if n=1.
+
+        Raises:
+            NotImplementedError: If the distribution doesn't have a sampling method.
+        """
         if hasattr(self, "distribution"):
             return self.distribution.rvs(n)
         else:
             raise NotImplementedError
 
-    def test_integral(self):
+    def test_integral(self) -> None:
+        """Test that the prior integrates to 1 within its bounds."""
         assert np.isclose(1, quad(self.pdf, *self.bounds)[0])
 
-    def test_sampling(self, n=100000, plot=False):
+    def test_sampling(self, n: int = 100000, plot: bool = False) -> None:
+        """Test that sampling matches the PDF.
+
+        Args:
+            n: Number of samples to draw. Defaults to 100000.
+            plot: If True, plot the histogram and PDF. Defaults to False.
+        """
         x = self.sample(n)
         if hasattr(self, "bounds"):
             if self.bounds == (-np.inf, np.inf):
@@ -210,7 +310,7 @@ class BrokenPrior(Prior):
         i = np.digitize(x, self.breakpoints)
         return self.components[i].lnpdf(x) - self.lognorms[i]
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         u = np.random.random(n)
 
         x = np.zeros(n)
@@ -288,7 +388,7 @@ class FlatPrior(BoundedPrior):
         lo, hi = self.bounds
         return 1.0 / (hi - lo)
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         lo, hi = self.bounds
         return np.random.random(n) * (hi - lo) + lo
 
@@ -301,7 +401,7 @@ class FlatLogPrior(BoundedPrior):
         lo, hi = self.bounds
         return np.log(10) * 10 ** x / (10 ** hi - 10 ** lo)
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         lo, hi = self.bounds
         return np.log10(np.random.random(n) * (10 ** hi - 10 ** lo) + 10 ** lo)
 
@@ -322,14 +422,12 @@ class PowerLawPrior(BoundedPrior):
         C = (1 + self.alpha) / (hi ** (1 + self.alpha) - lo ** (1 + self.alpha))
         return np.log(C) + self.alpha * np.log(x)
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         """
-
         cdf = C * int(x**a)|x=lo..x
-
             = C * [x**(a+1) / (a+1)] | x=lo..x
             = C * ([x**(a+1) / (a+1)] - [lo**(a+1) / (a+1)])
-         u  =
+         u  = 
 
          u/C + [lo**(a+1) / (a+1)] = x**(a+1) / (a+1)
          (a+1) * (u/C + [lo**(a+1) / (a+1)]) = x**(a+1)
@@ -380,7 +478,7 @@ class FehPrior(Prior):
 
         return self.halo_fraction * halo_fehdist + (1 - self.halo_fraction) * disk_fehdist
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         if self.local:
             w1, mu1, sig1 = 0.8, 0.016, 0.15
             w2, mu2, sig2 = 0.2, -0.15, 0.22

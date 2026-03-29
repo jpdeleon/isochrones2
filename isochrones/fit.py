@@ -1,71 +1,174 @@
-import os, sys
+"""MCMC fitting utilities using emcee3.
+
+This module provides classes and functions for performing Markov Chain Monte Carlo
+(MCMC) fitting of stellar models to observational data using the emcee3 sampler.
+
+Classes:
+    Emcee3Model: emcee3 model class with prior and likelihood computation.
+    Emcee3PriorModel: emcee3 model class for prior-only sampling.
+
+Functions:
+    write_samples: Save MCMC samples to HDF5 file.
+    fit_emcee3: Run MCMC fitting using emcee3.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from typing import TYPE_CHECKING, Optional, Any, Dict, Tuple
+
 import pandas as pd
 import numpy as np
 
 import emcee3
 from emcee3.backends import Backend, HDFBackend
 
+if TYPE_CHECKING:
+    from .starmodel import StarModel
+
 
 class Emcee3Model(emcee3.Model):
-    def __init__(self, mod, *args, **kwargs):
+    """emcee3 model class for star model fitting.
+
+    This class wraps a StarModel to provide the log prior and log likelihood
+    computation methods required by emcee3.
+    """
+
+    def __init__(self, mod: "StarModel", *args: Any, **kwargs: Any) -> None:
+        """Initialize the emcee3 model.
+
+        Args:
+            mod: The StarModel to fit.
+            *args: Additional positional arguments passed to parent.
+            **kwargs: Additional keyword arguments passed to parent.
+        """
         self.mod = mod
         super().__init__(*args, **kwargs)
 
-    def compute_log_prior(self, state):
+    def compute_log_prior(self, state: emcee3.State) -> emcee3.State:
+        """Compute the log prior probability.
+
+        Args:
+            state: The current sampler state with coordinates.
+
+        Returns:
+            State with log_prior attribute set.
+        """
         state.log_prior = self.mod.lnprior(state.coords)
         return state
 
-    def compute_log_likelihood(self, state):
+    def compute_log_likelihood(self, state: emcee3.State) -> emcee3.State:
+        """Compute the log likelihood.
+
+        Args:
+            state: The current sampler state with coordinates.
+
+        Returns:
+            State with log_likelihood attribute set.
+        """
         state.log_likelihood = self.mod.lnlike(state.coords)
         return state
 
 
 class Emcee3PriorModel(emcee3.Model):
-    def __init__(self, mod, *args, **kwargs):
+    """emcee3 model class for prior-only sampling.
+
+    This class computes only the log prior, setting log likelihood to zero.
+    Useful for testing priors or burn-in phases.
+    """
+
+    def __init__(self, mod: "StarModel", *args: Any, **kwargs: Any) -> None:
+        """Initialize the prior-only emcee3 model.
+
+        Args:
+            mod: The StarModel with prior to sample.
+            *args: Additional positional arguments passed to parent.
+            **kwargs: Additional keyword arguments passed to parent.
+        """
         self.mod = mod
         super().__init__(*args, **kwargs)
 
-    def compute_log_prior(self, state):
+    def compute_log_prior(self, state: emcee3.State) -> emcee3.State:
+        """Compute the log prior probability.
+
+        Args:
+            state: The current sampler state with coordinates.
+
+        Returns:
+            State with log_prior attribute set.
+        """
         state.log_prior = self.mod.lnprior(state.coords)
         return state
 
-    def compute_log_likelihood(self, state):
+    def compute_log_likelihood(self, state: emcee3.State) -> emcee3.State:
+        """Compute the log likelihood (always zero for prior-only sampling)."""
         state.log_likelihood = 0
         return state
 
 
-def write_samples(mod, df, resultsdir="results"):
-    """df is dataframe of samples, mod is model
-    """
+def write_samples(mod: "StarModel", df: pd.DataFrame, resultsdir: str = "results") -> None:
+    """Save MCMC samples to an HDF5 file.
 
+    Args:
+        mod: The StarModel that was fitted.
+        df: DataFrame containing MCMC samples.
+        resultsdir: Directory to save the samples file. Defaults to "results".
+    """
     if not os.path.exists(resultsdir):
         os.makedirs(resultsdir)
     samplefile = os.path.join(resultsdir, "{}.h5".format(mod.name))
-    df.to_hdf(samplefile, "samples")
+    df.to_hdf(samplefile, key="samples")
 
 
 def fit_emcee3(
-    mod,
-    nwalkers=500,
-    verbose=False,
-    nsamples=5000,
-    targetn=4,
-    iter_chunksize=200,
-    pool=None,
-    overwrite=False,
-    maxiter=10,
-    sample_directory="mcmc_chains",
-    nburn=2,
-    mixedmoves=True,
-    resultsdir="mcmc_results",
-    prior_only=False,
-    **kwargs
-):
-    """fit model using Emcee3
+    mod: "StarModel",
+    nwalkers: int = 500,
+    verbose: bool = False,
+    nsamples: int = 5000,
+    targetn: float = 4,
+    iter_chunksize: int = 200,
+    pool: Optional[Any] = None,
+    overwrite: bool = False,
+    maxiter: int = 10,
+    sample_directory: str = "mcmc_chains",
+    nburn: float = 2,
+    mixedmoves: bool = True,
+    resultsdir: str = "mcmc_results",
+    prior_only: bool = False,
+    **kwargs: Any
+) -> pd.DataFrame:
+    """Fit a star model using emcee3 MCMC sampler.
 
-    modeled after https://github.com/dfm/gaia-kepler/blob/master/fit.py
+    This function runs MCMC sampling to infer stellar parameters from
+    observational data. It uses automatic convergence checking based on
+    autocorrelation time.
 
-    nburn is number of autocorr times to discard as burnin.
+    Args:
+        mod: The StarModel to fit.
+        nwalkers: Number of walkers. Defaults to 500.
+        verbose: If True, print progress information. Defaults to False.
+        nsamples: Target number of samples to keep. Defaults to 5000.
+        targetn: Target effective sample size (in units of autocorrelation time).
+            Defaults to 4.
+        iter_chunksize: Number of samples per iteration. Defaults to 200.
+        pool: Optional pool for parallel sampling.
+        overwrite: If True, overwrite existing chains. Defaults to False.
+        maxiter: Maximum number of iterations. Defaults to 10.
+        sample_directory: Directory to store chain files. Defaults to "mcmc_chains".
+        nburn: Number of autocorrelation times to discard as burn-in.
+            Defaults to 2.
+        mixedmoves: If True, use mixed moves (KDEMove, DEMove, DESnookerMove).
+            Defaults to True.
+        resultsdir: Directory to save results. Defaults to "mcmc_results".
+        prior_only: If True, only sample from the prior. Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Returns:
+        DataFrame with MCMC samples.
+
+    Raises:
+        ValueError: If model initialization fails.
     """
 
     # Initialize

@@ -29,10 +29,7 @@ if not on_rtd:
     import configobj
     from astropy.coordinates import SkyCoord
 
-    try:
-        basestring
-    except NameError:
-        basestring = str
+basestring = str
 
 from .utils import addmags
 from .observation import ObservationTree, Observation, Source
@@ -221,10 +218,10 @@ class StarModel(object):
         """
         m = re.search(r"[a-zA-Z0-9_]+", kw)
         if m:
-            if m.group(1) in cls._not_a_band:
+            if m.group(0) in cls._not_a_band:
                 return None
             else:
-                return m.group(1)
+                return m.group(0)
 
     @classmethod
     def get_bands(cls, inifile):
@@ -405,7 +402,7 @@ class StarModel(object):
                             row["mag"] = float(mag)
                             row["e_mag"] = float(e_mag)
                             if not np.isnan(row["mag"]) and not np.isnan(row["e_mag"]):
-                                df = df.append(pd.DataFrame(row, index=[i]))
+                                df = pd.concat([df, pd.DataFrame(row, index=[i])], ignore_index=True)
                                 i += 1
 
                         # put the reference star in w/ mag=0
@@ -419,7 +416,7 @@ class StarModel(object):
                             row["pa"] = 0.0
                             row["mag"] = 0.0
                             row["e_mag"] = 0.01
-                            df = df.append(pd.DataFrame(row, index=[i]))
+                            df = pd.concat([df, pd.DataFrame(row, index=[i])], ignore_index=True)
                             i += 1
 
             obs = ObservationTree.from_df(df)
@@ -430,6 +427,17 @@ class StarModel(object):
         logger.debug("Obs is {}".format(obs))
 
         name = kwargs.pop("name", os.path.basename(folder))
+
+        if cls.__name__ == "BasicStarModel" and obs is not None:
+            phot = obs.to_df()
+            for _, row in phot.iterrows():
+                band = row["band"]
+                mag = row["mag"]
+                e_mag = row["e_mag"]
+                if band in ic.bands and not np.isnan(mag) and not np.isnan(e_mag):
+                    kwargs[band] = (mag, e_mag)
+            obs = None
+
         new = cls(ic, obs=obs, **kwargs, name=name)
         new._directory = os.path.abspath(folder)
 
@@ -832,7 +840,7 @@ class StarModel(object):
         fit = scipy.optimize.minimize(fn, p0, **kwargs)
         return fit
 
-    def sample_from_prior(self, n):
+    def sample_from_prior(self, n, values=False, require_valid=True, **kwargs):
         return self.emcee_p0(n)
 
     def emcee_p0(self, nwalkers):
@@ -1145,7 +1153,7 @@ class StarModel(object):
             tot_mag = addmags(*mags)
 
             if n.relative:
-                name = "{} $\Delta${}".format(n.instrument, n.band)
+                name = r"{} $\Delta${}".format(n.instrument, n.band)
                 ref = n.reference
                 if ref is None:
                     continue
@@ -1233,9 +1241,9 @@ class StarModel(object):
                         )
 
         if self.samples is not None:
-            self.samples.to_hdf(filename, path + "/samples", format="table")
+            self.samples.to_hdf(filename, key=path + "/samples", format="table")
         else:
-            pd.DataFrame().to_hdf(filename, path + "/samples", format="table")
+            pd.DataFrame().to_hdf(filename, key=path + "/samples", format="table")
 
         self.obs.save_hdf(filename, path + "/obs", append=True)
 
@@ -1483,6 +1491,50 @@ class BasicStarModel(StarModel):
         self._samples = None
         self._derived_samples = None
 
+    def emcee_p0(self, nwalkers):
+        nstars = self.N
+
+        def sample_row(nstars, n=nwalkers):
+            p = []
+
+            age0 = self._priors["age"].sample(n)
+            feh0 = self._priors["feh"].sample(n)
+            d0 = self._priors["distance"].sample(n)
+            AV0 = self._priors["AV"].sample(n)
+
+            mass0 = self._priors["mass"].sample(n)
+            if self.ic.eep_replaces == "age":
+                eep0 = self._priors["eep"].sample(n, mass=mass0, feh=feh0)
+            else:
+                eep0 = self._priors["eep"].sample(n, age=age0, feh=feh0)
+
+            for i in range(nstars):
+                p += [eep0]
+            p += [age0, feh0, d0, AV0]
+            return p
+
+        p0 = sample_row(nstars)
+        p0 = np.array(p0).T
+
+        nbad = 1
+
+        while True:
+            ibad = []
+            for i, p in enumerate(p0):
+                if not np.isfinite(self.lnpost(p)):
+                    ibad.append(i)
+
+            nbad = len(ibad)
+            if nbad == 0:
+                break
+
+            pnew = sample_row(nstars, n=nbad)
+            pnew = np.array(pnew).T
+
+            p0[ibad, :] = pnew
+
+        return p0
+
     def write_ini(self, root="."):
         path = os.path.join(root, self.name)
         if not os.path.exists(path):
@@ -1645,23 +1697,57 @@ class BasicStarModel(StarModel):
         return self.lnpost(cube)
 
     @property
+    def samples(self):
+        if not hasattr(self, "sampler") and self._samples is None:
+            raise AttributeError("Must run MCMC (or load from file) before accessing samples")
+
+        if self._samples is not None:
+            return self._samples
+        elif hasattr(self, "sampler"):
+            chain = self.sampler.flatchain
+            lnprob = self.sampler.lnprobability.ravel()
+            df = pd.DataFrame(chain, columns=self.param_names)
+            df["lnprob"] = lnprob
+            self._samples = df
+            return df
+        else:
+            self._make_samples()
+            return self._samples
+
+    @property
     def derived_samples(self):
         if self._derived_samples is None:
             self._make_samples()
         return self._derived_samples
 
     def _make_samples(self):
-        filename = "{}post_equal_weights.dat".format(self.mnest_basename)
-        try:
-            df = pd.read_csv(filename, names=self.param_names + ("lnprob",), delim_whitespace=True)
-        except OSError:
-            logger.error("Error loading chains from {}".format(filename))
-            raise
-
-        self._samples = df
+        if hasattr(self, "sampler"):
+            chain = self.sampler.flatchain
+            lnprob = self.sampler.lnprobability.ravel()
+            df = pd.DataFrame(chain, columns=self.param_names)
+            df["lnprob"] = lnprob
+            self._samples = df
+        elif self._samples is not None and len(self._samples) > 0:
+            df = self._samples
+        else:
+            filename = "{}post_equal_weights.dat".format(self.mnest_basename)
+            try:
+                df = pd.read_csv(filename, names=self.param_names + ("lnprob",), sep=r'\s+')
+            except OSError:
+                logger.error("Error loading chains from {}".format(filename))
+                raise
+            self._samples = df
 
         if self.N == 1:
-            self._derived_samples = self.ic(*[df[c].values for c in self.param_names])
+            eep = df["eep"].values
+            age = df["age"].values
+            feh = df["feh"].values
+            distance = df["distance"].values
+            AV = df["AV"].values
+            self._derived_samples = self.ic(eep, age, feh, distance=distance, AV=AV)
+            self._derived_samples["parallax"] = 1000.0 / distance
+            self._derived_samples["distance"] = distance
+            self._derived_samples["AV"] = AV
         elif self.N == 2 or self.N == 3:
             self._derived_samples = df.copy()
 
@@ -1870,16 +1956,22 @@ class BasicStarModel(StarModel):
                             "{} in {} exists.  Set either overwrite or append option.".format(path, filename)
                         )
 
-        if self.samples is not None:
-            self.samples.to_hdf(filename, path + "/samples")
-            self.derived_samples.to_hdf(filename, path + "/derived_samples")
-        else:
-            pd.DataFrame().to_hdf(filename, path + "/samples")
-            pd.Dataframe().to_hdf(filename, path + "/derived_samples")
+        has_samples = False
+        try:
+            samples = self.samples
+            has_samples = samples is not None and len(samples) > 0
+        except (AttributeError, OSError):
+            pass
+        
+        if has_samples:
+            self.samples.to_hdf(filename, key=path + "/samples")
+            self.derived_samples.to_hdf(filename, key=path + "/derived_samples")
 
         with pd.HDFStore(filename) as store:
-            # store = pd.HDFStore(filename)
-            attrs = store.get_storer("{}/samples".format(path)).attrs
+            key = path + "/samples" if has_samples else path + "/derived_samples"
+            if key not in store:
+                key = path + "/samples"
+            attrs = store.get_storer(key).attrs
 
             attrs.ic_type = type(self.ic)
             attrs.ic_bands = list(self.ic.bands)
@@ -1916,9 +2008,11 @@ class BasicStarModel(StarModel):
 
         with pd.HDFStore(filename) as store:
             try:
-                samples = store[path + "/samples"]
-                derived_samples = store[path + "/derived_samples"]
-                attrs = store.get_storer(path + "/samples").attrs
+                samples_path = path + "/samples"
+                derived_path = path + "/derived_samples"
+                samples = store[samples_path] if samples_path in store and len(store[samples_path]) > 0 else None
+                derived_samples = store[derived_path] if derived_path in store and len(store[derived_path]) > 0 else None
+                attrs = store.get_storer(samples_path).attrs
             except:
                 store.close()
                 raise

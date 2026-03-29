@@ -626,17 +626,22 @@ class DFInterpolator(object):
         icol = self.column_index[col]
 
         if self.ndim == 3:
-            return find_closest3(val, lo, hi, v1, v2, self.grid, icol, *self.index_columns, debug=debug)
+            return find_closest3(val, lo, hi, v1, v2, self.grid, icol, *self.index_columns, debug)  # type: ignore[arg-type]
 
     def __call__(self, p, cols="all"):
-        if cols == "all":
+        if not isinstance(cols, str):
+            if hasattr(cols, '__iter__'):
+                icols = np.array([self.column_index[col] for col in cols])
+            else:
+                icols = np.arange(self.n_columns)
+        elif cols.lower() == "all":
             icols = np.arange(self.n_columns)
         else:
             icols = np.array([self.column_index[col] for col in cols])
         args = (p, self.grid, icols, self.index_columns)
 
         if self.ndim == 2:
-            args = (p[0], p[1], self.grid, icols, self.index_columns[0], self.index_columns[1])
+            args = (p[0], p[1], self.grid, icols, self.index_columns[0], self.index_columns[1])  # type: ignore[assignment]
             if (isinstance(p[0], float) or isinstance(p[0], int)) and (
                 isinstance(p[1], float) or isinstance(p[1], int)
             ):
@@ -648,7 +653,7 @@ class DFInterpolator(object):
                 # print([(a, type(a)) for a in args])
                 values = interp_values_2d(*args)
         if self.ndim == 3:
-            args = (
+            args = (  # type: ignore[assignment]
                 p[0],
                 p[1],
                 p[2],
@@ -671,7 +676,7 @@ class DFInterpolator(object):
                 # print([(a, type(a)) for a in args])
                 values = interp_values_3d(*args)
         elif self.ndim == 4:
-            args = (
+            args = (  # type: ignore[assignment]
                 p[0],
                 p[1],
                 p[2],

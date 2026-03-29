@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from typing import Union, List
 
 from isochrones.mist import MIST_Isochrone
 from isochrones import StarModel, BinaryStarModel, TripleStarModel
@@ -40,7 +41,7 @@ def _check_ini(ic):
 
 
 class IniCheck(object):
-    index = 0
+    index: Union[int, List[int]] = 0
 
     def get_mod(self, ic, folder):
         return StarModel.from_ini(ic, folder=folder, index=self.index)
