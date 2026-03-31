@@ -1,10 +1,14 @@
 import os, glob
 import numpy as np
 import tempfile
-import tables as tb
 
-from pandas.util.testing import assert_frame_equal
-from flaky import flaky
+import pytest
+
+tb = pytest.importorskip("tables", reason="pytables not installed")
+flaky_mod = pytest.importorskip("flaky", reason="flaky not installed")
+flaky = flaky_mod.flaky
+
+from pandas.testing import assert_frame_equal
 
 from isochrones.mist import MIST_Isochrone
 from isochrones import StarModel

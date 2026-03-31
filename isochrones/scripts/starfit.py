@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-A command-line program to fit a StarModel using the isochrones package
+A command-line program to fit a StarModel using the isochrones package.
 
 Input argument is name of a folder that contains a file
 called ``star.ini``, which is a config file containing all
@@ -8,20 +8,22 @@ the observed properties of the star on which the model should
 be conditioned.  Multiple folder names can also be passed.
 
 """
-from __future__ import division, print_function
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import os.path
+import re
+import sys
+import time
+from typing import Any, List, Optional, Tuple
 
 import matplotlib
-
 matplotlib.use("agg")
 
 import matplotlib.pyplot as plt
 import tables
-
-import os, os.path, re, sys
-import logging
-import time
-
-import argparse
 
 from isochrones.starfit import starfit
 
@@ -31,8 +33,8 @@ try:
 except ImportError:
     has_tgastars = False
 
-if __name__ == "__main__":
 
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Fit physical properties of a star conditioned on observed quantities."
     )
@@ -97,9 +99,10 @@ if __name__ == "__main__":
 
         mod, logger = starfit_fn(folder, **kwargs)
 
-        # Not using this, so delete.
         del mod
 
-        # Don't know why this is necessary?  Haven't been able to track down where file gets left open.
-        # But this is necessary to avoid building up of open files.
         tables.file._open_files.close_all()
+
+
+if __name__ == "__main__":
+    main()

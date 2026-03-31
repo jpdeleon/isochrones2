@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-A command-line program to fit a StarModel using the isochrones package
+A command-line program to fit a StarModel using the isochrones package.
 
 Input argument is name of a folder that contains a file
 called ``star.ini``, which is a config file containing all
@@ -8,24 +8,26 @@ the observed properties of the star on which the model should
 be conditioned.  Multiple folder names can also be passed.
 
 """
-from __future__ import division, print_function
+from __future__ import annotations
 
-import os, os.path, re, sys
-import logging
-
-from configobj import ConfigObj
 import argparse
+import logging
+import os
+import os.path
+import re
+import sys
+from typing import List, Optional
 
-#from isochrones.starmodel import StarModel, BinaryStarModel, TripleStarModel
 import pandas as pd
+from configobj import ConfigObj
 
 import schwimmbad
 from isochrones.summary import get_summary_df
 
-PROPS = ['mass', 'radius', 'Teff', 'logg', 'feh', 'age', 'distance', 'AV']
+PROPS: List[str] = ['mass', 'radius', 'Teff', 'logg', 'feh', 'age', 'distance', 'AV']
 
-if __name__=='__main__':
 
+def main() -> None:
     parser = argparse.ArgumentParser(description='Fit physical properties of a star conditioned on observed quantities.')
 
     parser.add_argument('folders', nargs='*', default=['.'])
@@ -49,18 +51,15 @@ if __name__=='__main__':
 
     pool = schwimmbad.choose_pool(mpi=args.mpi, processes=args.n_cores)
 
-    # Generate and write summary dataframe
     if args.filename is not None:
         with open(args.filename, 'r') as fin:
             names = fin.read().splitlines()
 
         df = get_summary_df(names, rootdir=args.rootdir, modelname=args.modelname,
                             pool=pool, raise_exceptions=args.raise_exceptions)
-        df.to_hdf(os.path.join(args.rootdir, args.outfile), 'df')
+        df.to_hdf(os.path.join(args.rootdir, args.outfile), key='df')
         sys.exit(0)
 
-
-    # Old thing, just write results.txt files for each star
     if args.all:
         multiplicities = ['single', 'binary', 'triple']
     elif args.binary:
@@ -70,19 +69,13 @@ if __name__=='__main__':
     else:
         multiplicities = ['single']
 
-    #Models = {'single':StarModel,
-    #          'binary':BinaryStarModel,
-    #          'triple':TripleStarModel}
-
-    for i,folder in enumerate(args.folders):
+    for i, folder in enumerate(args.folders):
         for mult in multiplicities:
-            #Model = Models[mult]
             model_filename = '{}/{}_starmodel_{}.h5'.format(folder,
                                                             args.models, mult)
 
             try:
-                samples = pd.read_hdf(model_filename, 'samples')
-                #mod = Model.load_hdf('{}/{}'.format(folder,model_filename))
+                samples = pd.read_hdf(model_filename, key='samples')
                 results_file = '{}/{}_{}_results.txt'.format(folder,
                                                              args.models,
                                                              mult)
@@ -105,5 +98,9 @@ if __name__=='__main__':
                 raise
             except:
                 logging.error('failed to write starfit summary '
-                             'file for {}.'.format(mult,folder),
+                             'file for %s %s.', mult, folder,
                              exc_info=True)
+
+
+if __name__ == '__main__':
+    main()

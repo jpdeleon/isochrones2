@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isochrones"
+version = "2.1"
+description = "Defines objects for interpolating stellar model grids."
+readme = "README.rst"
+requires-python = ">=3.12"
+authors = [
+    { name = "Timothy D. Morton", email = "tim.morton@gmail.com" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.1",
+    "scipy>=1.11",
+    "numba>=0.55",
+    "astropy>=5.3",
+    "emcee>=3.1",
+    "astroquery>=0.4.7",
+    "tables>=3.9",
+    "tqdm>=4.66",
+    "corner>=2.2",
+    "configobj>=5.0.0",
+    "requests>=2.31",
+    "asciitree>=0.3.3",
+    "schwimmbad>=0.3",
+]
+
+[project.scripts]
+starfit = "isochrones.scripts.starfit:main"
+batch-starfit = "isochrones.scripts.batch_starfit:main"
+starmodel-select = "isochrones.scripts.starmodel_select:main"
+starfit-summarize = "isochrones.scripts.starfit_summarize:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "hypothesis>=6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["isochrones*"]
+
+[tool.setuptools.package-data]
+isochrones = ["data/*", "tests/star*/*.ini"]
+
+[tool.pytest.ini_options]
+testpaths = ["isochrones/tests"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+follow_imports = "normal"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numba.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tables.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "emcee.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "corner.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "astroquery.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "astropy.io.ascii.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "scipy.interpolate.*"
+ignore_missing_imports = true

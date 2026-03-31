@@ -1,18 +1,24 @@
 #!/usr/bin/env python
 """
-Launches batch job running starfit on every folder listed in a file
+Launches batch job running starfit on every folder listed in a file.
 
 Uses slurm job array by default, but could be reconfigured
 to another batch scheduler if desired.
 """
-from __future__ import print_function, division
+from __future__ import annotations
 
-import os,re,sys,os.path,shutil,glob
 import argparse
-import numpy as np
+import glob
+import os
+import os.path
+import re
+import shutil
 import subprocess
+import sys
+from typing import List, Optional
 
-if __name__=='__main__':
+
+def main() -> None:
     parser = argparse.ArgumentParser(description='Fire up a batch starfit job')
 
     parser.add_argument('file', type=str)
@@ -44,8 +50,8 @@ if __name__=='__main__':
     num_per_job = num_lines // nsplit
     if num_lines % nsplit != 0:
         num_per_job += 1
-    tot_minutes = args.time*num_per_job
-    time_string = '{:02.0f}:{:02.0f}:00'.format(tot_minutes//60, tot_minutes % 60)
+    tot_minutes = args.time * num_per_job
+    time_string = '{:02.0f}:{:02.0f}:00'.format(tot_minutes // 60, tot_minutes % 60)
 
             
     scriptfile = '{}.batch'.format(listfile)
@@ -68,6 +74,8 @@ if __name__=='__main__':
                'wait\n')
     fout.close()
 
-    #execute slurm batch job
     subprocess.call('sbatch {}'.format(scriptfile), shell=True)
 
+
+if __name__ == '__main__':
+    main()

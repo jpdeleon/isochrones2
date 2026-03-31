@@ -1,4 +1,3 @@
-from __future__ import print_function, division
 import os, re, sys
 
 from .config import on_rtd
@@ -1257,7 +1256,14 @@ class ObservationTree(Node):
             except AttributeError:
                 pass
 
-        inds = np.argsort(ds)
+        def _node_depth(n):
+            try:
+                return len(n.get_ancestors())
+            except (AttributeError, TypeError):
+                return -1
+
+        # Sort by distance, breaking ties by preferring deeper nodes
+        inds = sorted(range(len(ds)), key=lambda i: (ds[i], -_node_depth(nodes[i])))
         ds = [ds[i] for i in inds]
         nodes = [nodes[i] for i in inds]
 

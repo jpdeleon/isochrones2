@@ -1,5 +1,3 @@
-from __future__ import print_function, division
-
 import os, os.path, sys, re, glob
 import itertools
 from copy import deepcopy
@@ -221,10 +219,10 @@ class StarModel(object):
         """
         m = re.search(r"[a-zA-Z0-9_]+", kw)
         if m:
-            if m.group(1) in cls._not_a_band:
+            if m.group(0) in cls._not_a_band:
                 return None
             else:
-                return m.group(1)
+                return m.group(0)
 
     @classmethod
     def get_bands(cls, inifile):
@@ -405,7 +403,7 @@ class StarModel(object):
                             row["mag"] = float(mag)
                             row["e_mag"] = float(e_mag)
                             if not np.isnan(row["mag"]) and not np.isnan(row["e_mag"]):
-                                df = df.append(pd.DataFrame(row, index=[i]))
+                                df = pd.concat([df, pd.DataFrame(row, index=[i])])
                                 i += 1
 
                         # put the reference star in w/ mag=0
@@ -419,7 +417,7 @@ class StarModel(object):
                             row["pa"] = 0.0
                             row["mag"] = 0.0
                             row["e_mag"] = 0.01
-                            df = df.append(pd.DataFrame(row, index=[i]))
+                            df = pd.concat([df, pd.DataFrame(row, index=[i])])
                             i += 1
 
             obs = ObservationTree.from_df(df)
@@ -539,7 +537,10 @@ class StarModel(object):
         lnpr = self.lnprior(p)
         if not np.isfinite(lnpr):
             return -np.inf
-        return lnpr + self.lnlike(p, **kwargs)
+        lnl = lnpr + self.lnlike(p, **kwargs)
+        if not np.isfinite(lnl):
+            return -np.inf
+        return lnl
 
     def lnlike(self, p, **kwargs):
         pardict = self.obs.p2pardict(p)
@@ -951,7 +952,7 @@ class StarModel(object):
             if initial_burn:
                 sampler = emcee.EnsembleSampler(nwalkers, npars, self.lnpost, **kwargs)
                 # ninitial = 300 #should this be parameter?
-                pos, prob, state = sampler.run_mcmc(p0, ninitial)
+                state = sampler.run_mcmc(p0, ninitial)
 
                 # Choose walker with highest final lnprob to seed new one
                 i, j = np.unravel_index(sampler.lnprobability.argmax(), sampler.shape)
@@ -964,9 +965,9 @@ class StarModel(object):
             p0 = rand.normal(size=(nwalkers, npars)) * 0.01 + p0.T[None, :]
 
         sampler = emcee.EnsembleSampler(nwalkers, npars, self.lnpost)
-        pos, prob, state = sampler.run_mcmc(p0, nburn)
+        state = sampler.run_mcmc(p0, nburn)
         sampler.reset()
-        sampler.run_mcmc(pos, niter, rstate0=state)
+        sampler.run_mcmc(state, niter)
 
         self._sampler = sampler
         return sampler
@@ -1233,9 +1234,9 @@ class StarModel(object):
                         )
 
         if self.samples is not None:
-            self.samples.to_hdf(filename, path + "/samples", format="table")
+            self.samples.to_hdf(filename, key=path + "/samples", format="table")
         else:
-            pd.DataFrame().to_hdf(filename, path + "/samples", format="table")
+            pd.DataFrame().to_hdf(filename, key=path + "/samples", format="table")
 
         self.obs.save_hdf(filename, path + "/obs", append=True)
 
@@ -1634,6 +1635,42 @@ class BasicStarModel(StarModel):
 
         return lnp
 
+    def _sample_p0(self, n):
+        """Sample n initial parameter vectors for emcee walkers."""
+        p = []
+
+        age0 = self._priors["age"].sample(n)
+        feh0 = self._priors["feh"].sample(n)
+        d0 = self._priors["distance"].sample(n)
+        AV0 = self._priors["AV"].sample(n)
+
+        for i in range(self.N):
+            mass0 = self._priors["mass"].sample(n)
+            if self.ic.eep_replaces == "age":
+                eep0 = self._priors["eep"].sample(n, mass=mass0, feh=feh0)
+            else:
+                eep0 = self._priors["eep"].sample(n, age=age0, feh=feh0)
+            p += [eep0]
+        p += [age0, feh0, d0, AV0]
+
+        return np.array(p).T
+
+    def emcee_p0(self, nwalkers):
+        p0 = self._sample_p0(nwalkers)
+
+        while True:
+            ibad = []
+            for i, prow in enumerate(p0):
+                if not np.isfinite(self.lnpost(prow)):
+                    ibad.append(i)
+
+            if len(ibad) == 0:
+                break
+
+            p0[ibad, :] = self._sample_p0(len(ibad))
+
+        return p0
+
     def mnest_prior(self, cube, ndim, nparams):
         for i, par in enumerate(self.param_names):
             lo, hi = self.bounds(par)
@@ -1651,12 +1688,18 @@ class BasicStarModel(StarModel):
         return self._derived_samples
 
     def _make_samples(self):
-        filename = "{}post_equal_weights.dat".format(self.mnest_basename)
-        try:
-            df = pd.read_csv(filename, names=self.param_names + ("lnprob",), delim_whitespace=True)
-        except OSError:
-            logger.error("Error loading chains from {}".format(filename))
-            raise
+        if not self.use_emcee:
+            filename = "{}post_equal_weights.dat".format(self.mnest_basename)
+            try:
+                df = pd.read_csv(filename, names=self.param_names + ("lnprob",), sep=r"\s+")
+            except OSError:
+                logger.error("Error loading chains from {}".format(filename))
+                raise
+        else:
+            chain = self.sampler.flatchain
+            lnprob = self.sampler.flatlnprobability
+            df = pd.DataFrame(chain, columns=self.param_names)
+            df["lnprob"] = lnprob
 
         self._samples = df
 
@@ -1871,11 +1914,11 @@ class BasicStarModel(StarModel):
                         )
 
         if self.samples is not None:
-            self.samples.to_hdf(filename, path + "/samples")
-            self.derived_samples.to_hdf(filename, path + "/derived_samples")
+            self.samples.to_hdf(filename, key=path + "/samples")
+            self.derived_samples.to_hdf(filename, key=path + "/derived_samples")
         else:
-            pd.DataFrame().to_hdf(filename, path + "/samples")
-            pd.Dataframe().to_hdf(filename, path + "/derived_samples")
+            pd.DataFrame().to_hdf(filename, key=path + "/samples")
+            pd.DataFrame().to_hdf(filename, key=path + "/derived_samples")
 
         with pd.HDFStore(filename) as store:
             # store = pd.HDFStore(filename)

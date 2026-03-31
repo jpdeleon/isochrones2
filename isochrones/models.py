@@ -570,7 +570,7 @@ class ModelGridInterpolator(object):
             return result
 
         if result.success and result.fun < resid_tol ** 2:
-            return float(result.x)
+            return float(result.x[0]) if hasattr(result.x, '__len__') else float(result.x)
         else:
             if return_nan:
                 return np.nan
@@ -594,7 +594,7 @@ class ModelGridInterpolator(object):
     ):
         # Pre-empt potential type/shape issues
         mass, age, feh, distance, AV = [
-            np.atleast_1d(a) if np.size(a) > 1 else float(a)
+            np.atleast_1d(a) if np.size(a) > 1 else float(a.item()) if hasattr(a, 'item') else float(a)
             for a in np.broadcast_arrays(mass, age, feh, distance, AV)
         ]
 

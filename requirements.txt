@@ -1,6 +1,3 @@
-numpy
-numba
-nose
-pytables
-pandas
-pyviz
+# Dependencies are managed in pyproject.toml.
+# Install with: pip install -e .
+# Install with dev extras: pip install -e ".[dev]"
