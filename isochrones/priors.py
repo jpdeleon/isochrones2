@@ -1,9 +1,20 @@
+"""Prior probability distributions for stellar parameter estimation.
+
+This module provides various prior probability distributions used in
+Bayesian stellar model fitting, including:
+- Uniform and flat priors
+- Power law and log-normal priors
+- Gaussian priors
+- Composite priors (e.g., Chabrier IMF)
+- Stellar astrophysics-specific priors (e.g., age, distance, metallicity)
+"""
+
 import numpy as np
 import pandas as pd
 import scipy.stats
 from scipy.stats import uniform, lognorm
 from scipy.integrate import quad
-from scipy.stats._continuous_distns import _norm_pdf, _norm_cdf, _norm_logpdf
+from scipy.special import ndtr as _norm_cdf
 
 import matplotlib.pyplot as plt
 import numba as nb
@@ -27,6 +38,17 @@ def _norm_logpdf(x):
 
 
 class Prior(object):
+    """Base class for all prior probability distributions.
+
+    This is an abstract base class that defines the interface for all
+    prior distributions used in Bayesian stellar parameter estimation.
+
+    Attributes
+    ----------
+    bounds : tuple
+        The (lower, upper) bounds of the prior distribution.
+    """
+
     def __init__(self, *args, **kwargs):
         self._norm = 1.0
 
@@ -103,6 +125,17 @@ class Prior(object):
 
 
 class BoundedPrior(Prior):
+    """Prior with explicit bounds.
+
+    A prior distribution that has explicit lower and upper bounds,
+    outside of which the probability is zero.
+
+    Parameters
+    ----------
+    bounds : tuple, optional
+        The (lower, upper) bounds of the prior distribution.
+    """
+
     def __init__(self, bounds=None):
         self._bounds = bounds
         super(BoundedPrior, self).__init__()
@@ -139,14 +172,19 @@ class BoundedPrior(Prior):
 
 
 class BrokenPrior(Prior):
-    """Composition of multiple stitched-together priors, with breakpoint(s)
+    """Composition of multiple stitched-together priors, with breakpoint(s).
+
+    This prior combines multiple component priors using smooth transitions
+    at specified breakpoints. Useful for combining different physical regimes.
 
     Parameters
     ----------
-    components : list of `Prior` objects
-        Components going into prior
-    breakpoints : array
-        List of breakpoints separating components. Length = n(components) - 1
+    components : list of Prior objects
+        Components going into prior.
+    breakpoints : array-like
+        List of breakpoints separating components. Length = n(components) - 1.
+    bounds : tuple, optional
+        The (lower, upper) bounds of the prior distribution. Defaults to (-inf, inf).
     """
 
     def __init__(self, components, breakpoints, bounds=None):
@@ -231,13 +269,28 @@ class BrokenPrior(Prior):
 
 
 class GaussianPrior(BoundedPrior):
+    """Gaussian (normal) prior distribution with optional bounds.
+
+    A prior that follows a normal distribution, optionally truncated
+    to specified bounds.
+
+    Parameters
+    ----------
+    mean : float
+        Mean of the Gaussian distribution.
+    sigma : float
+        Standard deviation of the Gaussian distribution.
+    bounds : tuple, optional
+        The (lower, upper) bounds for truncation.
+    """
+
     def __init__(self, mean, sigma, bounds=None):
         self.mean = mean
         self.sigma = sigma
         self._bounds = bounds
         self._norm = 1.0
 
-        if bounds:
+        if bounds is not None:
             lo, hi = bounds
             a, b = (lo - mean) / sigma, (hi - mean) / sigma
             self.distribution = scipy.stats.truncnorm(a, b, loc=mean, scale=sigma)
@@ -256,6 +309,21 @@ class GaussianPrior(BoundedPrior):
 
 
 class LogNormalPrior(Prior):
+    """Log-normal prior distribution.
+
+    A prior that follows a log-normal distribution, commonly used
+    for positive-definite parameters like stellar masses.
+
+    Parameters
+    ----------
+    mu : float
+        Mean of the log-normal distribution (in log space).
+    sigma : float
+        Standard deviation of the log-normal distribution (in log space).
+    bounds : tuple, optional
+        The (lower, upper) bounds (defaults to (0, inf)).
+    """
+
     def __init__(self, mu, sigma, bounds=None):
         self.mu = mu
         self.sigma = sigma
@@ -265,7 +333,7 @@ class LogNormalPrior(Prior):
         self.distribution = lognorm(sigma, scale=np.exp(mu))
         self._bounds = (0, np.inf)
 
-        super().__init__(self)
+        super().__init__()
 
     def _pdf(self, x):
         s = self.sigma
@@ -279,6 +347,16 @@ class LogNormalPrior(Prior):
 
 
 class FlatPrior(BoundedPrior):
+    """Uniform (flat) prior distribution within bounds.
+
+    A prior that is uniform (constant) within specified bounds.
+
+    Parameters
+    ----------
+    bounds : tuple
+        The (lower, upper) bounds of the prior distribution.
+    """
+
     def __init__(self, bounds):
         super().__init__(bounds=bounds)
 
@@ -292,6 +370,17 @@ class FlatPrior(BoundedPrior):
 
 
 class FlatLogPrior(BoundedPrior):
+    """Uniform prior in log10 space within bounds.
+
+    A prior that is uniform in log10 space, useful for stellar ages
+    which are distributed uniformly in log(age).
+
+    Parameters
+    ----------
+    bounds : tuple
+        The (lower, upper) bounds of the prior distribution (in log10 space).
+    """
+
     def __init__(self, bounds):
         super(FlatLogPrior, self).__init__(bounds=bounds)
 
@@ -305,6 +394,19 @@ class FlatLogPrior(BoundedPrior):
 
 
 class PowerLawPrior(BoundedPrior):
+    """Power law prior distribution.
+
+    A prior that follows a power law distribution: P(x) ∝ x^alpha.
+    Commonly used for the initial mass function (IMF).
+
+    Parameters
+    ----------
+    alpha : float
+        Power law index. The PDF is proportional to x^alpha.
+    bounds : tuple, optional
+        The (lower, upper) bounds of the prior distribution.
+    """
+
     def __init__(self, alpha, bounds=None):
         self.alpha = alpha
         super(PowerLawPrior, self).__init__(bounds=bounds)
@@ -341,11 +443,22 @@ class PowerLawPrior(BoundedPrior):
 
 
 class FehPrior(Prior):
-    """feh PDF based on local SDSS distribution
+    """Metallicity ([Fe/H]) prior based on local SDSS distribution.
+
+    A prior for stellar metallicity based on a 2D Gaussian fit from
+    Casagrande (2011), with an optional halo fraction component.
 
     From Jo Bovy:
     https://github.com/jobovy/apogee/blob/master/apogee/util/__init__.py#L3
-    2D gaussian fit based on Casagrande (2011)
+
+    Parameters
+    ----------
+    halo_fraction : float, optional
+        Fraction of stars drawn from the halo population (default: 0.001).
+    local : bool, optional
+        Use local disk distribution if True (default: True).
+    **kwargs
+        Additional keyword arguments passed to the parent class.
     """
 
     def __init__(self, halo_fraction=0.001, local=True, **kwargs):
@@ -405,6 +518,21 @@ class FehPrior(Prior):
 
 
 class EEP_prior(BoundedPrior):
+    """Prior for the Equivalent Evolutionary Phase (EEP).
+
+    A prior on the EEP that accounts for the Jacobian transformation
+    when converting from mass or age priors to EEP space.
+
+    Parameters
+    ----------
+    ic : object
+        The isochrone interpolator object.
+    orig_prior : Prior
+        The original prior (e.g., mass or age prior).
+    bounds : tuple, optional
+        The (lower, upper) bounds of the prior distribution.
+    """
+
     def __init__(self, ic, orig_prior, bounds=None):
         self.ic = ic
         self.orig_prior = orig_prior
@@ -456,8 +584,15 @@ class EEP_prior(BoundedPrior):
         try:
             return eeps.sample(n, weights=weights, replace=True).values
         except ValueError:
-            # If there are no valid samples, just run it again until you get valid results
-            return self.sample(n, **kwargs)
+            if not hasattr(self, '_sample_retries'):
+                self._sample_retries = 0
+            self._sample_retries += 1
+            if self._sample_retries > 10:
+                self._sample_retries = 0
+                raise RuntimeError("EEP_prior.sample failed after 10 retries; weights may be all zero.")
+            result = self.sample(n, **kwargs)
+            self._sample_retries = 0
+            return result
 
     def test_integral(self):
         pass
@@ -479,7 +614,11 @@ def powerlaw_lnpdf(x, alpha, lo, hi):
 
 
 class AgePrior(FlatLogPrior):
-    """Uniform true age prior, where 'age' is actually log10(age)
+    """Uniform prior on stellar age in log10 space.
+
+    A prior that is uniform in log10(age), with default bounds
+    corresponding to ages from 10^5 to 10^10.15 years (roughly 100,000
+    years to ~14 billion years).
     """
 
     def __init__(self, **kwargs):
@@ -487,29 +626,82 @@ class AgePrior(FlatLogPrior):
 
 
 class DistancePrior(PowerLawPrior):
+    """Distance prior based on a power law.
+
+    A prior on stellar distance following a power law with index 2
+    (p(d) proportional to d^2), corresponding to a uniform spatial density.
+
+    Parameters
+    ----------
+    max_distance : float, optional
+        Maximum distance in parsecs (default: 10000).
+    **kwargs
+        Additional keyword arguments passed to the parent class.
+    """
+
     def __init__(self, max_distance=10000, **kwargs):
         super().__init__(alpha=2.0, bounds=(0, max_distance), **kwargs)
 
 
 class AVPrior(FlatPrior):
+    """Prior on the V-band extinction A_V.
+
+    A uniform prior on the V-band extinction, with default bounds
+    of (0, 1) mag.
+    """
+
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0, 1.0))
         super().__init__(bounds=bounds)
 
 
 class QPrior(PowerLawPrior):
+    """Prior on the mass ratio q = M_secondary / M_primary.
+
+    A power law prior on the mass ratio, commonly used for
+    binary star modeling.
+
+    Parameters
+    ----------
+    **kwargs
+        Additional keyword arguments passed to the parent class.
+    """
+
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0.1, 1))
         super().__init__(alpha=0.3, bounds=bounds, **kwargs)
 
 
 class SalpeterPrior(PowerLawPrior):
+    """Salpeter initial mass function (IMF) prior.
+
+    A power law prior with alpha=-2.35, corresponding to the
+    Salpeter (1955) initial mass function.
+
+    Parameters
+    ----------
+    **kwargs
+        Additional keyword arguments passed to the parent class.
+    """
+
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0.1, 10))
         super().__init__(alpha=-2.35, bounds=bounds, **kwargs)
 
 
 class ChabrierPrior(BrokenPrior):
+    """Chabrier (2003) initial mass function (IMF) prior.
+
+    A broken prior combining a log-normal distribution at low masses
+    with a Salpeter power law at high masses. Based on Chabrier 2003,
+    Eqn 17.
+
+    Parameters
+    ----------
+    **kwargs
+        Additional keyword arguments passed to the parent class.
+    """
+
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0.1, 100.0))
         super().__init__(

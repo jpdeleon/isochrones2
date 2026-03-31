@@ -192,9 +192,7 @@ class StellarModelGrid(Grid):
                     age_arrays[i, : len(xs)] = xs
                     dt_deep_arrays[i, : len(xs)] = subdf.dt_deep.values
                 except ValueError:
-                    import pdb
-
-                    pdb.set_trace()
+                    getLogger().warning("ValueError at index %d (x0=%s, x1=%s); skipping.", i, x0, x1)
 
             np.savez(
                 self.array_grid_filename, age=age_arrays, dt_deep=dt_deep_arrays, lengths=lengths.astype(int)
@@ -224,9 +222,9 @@ class StellarModelGrid(Grid):
         try:
             return self._dt_deep_grid
         except AttributeError:
-            age_grid, dt_deep_grid, lengths = self.get_array_grid()
+            age_grid, dt_deep_grid, lengths = self.get_array_grids()
             self._age_grid = age_grid
-            self._dt_deep_grid = arrays
+            self._dt_deep_grid = dt_deep_grid
             self._array_lengths = lengths
             return self._dt_deep_grid
 
@@ -235,9 +233,9 @@ class StellarModelGrid(Grid):
         try:
             return self._array_lengths
         except AttributeError:
-            age_grid, dt_deep_grid, lengths = self.get_array_grid()
+            age_grid, dt_deep_grid, lengths = self.get_array_grids()
             self._age_grid = age_grid
-            self._dt_deep_grid = arrays
+            self._dt_deep_grid = dt_deep_grid
             self._array_lengths = lengths
             return self._array_lengths
 
@@ -251,6 +249,21 @@ class StellarModelGrid(Grid):
 
 
 class ModelGridInterpolator(object):
+    """Base class for interpolating stellar evolution model grids.
+
+    This class provides interpolation of stellar evolution models
+    for arbitrary parameter combinations. It handles both isochrone
+    and evolution track parameterizations.
+
+    Attributes
+    ----------
+    bands : list
+        List of photometric bands for interpolation.
+    grid_type : type
+        The model grid class.
+    bc_type : type
+        The bolometric correction grid class.
+    """
 
     grid_type = None
     bc_type = None
@@ -332,7 +345,7 @@ class ModelGridInterpolator(object):
 
     @property
     def eep_replaces(self):
-        return self.grid.eep_replaces
+        return self.model_grid.eep_replaces
 
     @property
     def model_grid(self):
@@ -617,14 +630,14 @@ class ModelGridInterpolator(object):
                 props = self.model_grid.interp.columns
             values = pd.DataFrame(np.atleast_2d(values), columns=props + ["{}_mag".format(b) for b in bands])
 
-        values["distance"] = distance
-        values["AV"] = AV
-        values["initial_feh"] = feh
-        values["requested_age"] = age
+        if isinstance(values, (pd.DataFrame, dict)):
+            values["distance"] = distance
+            values["AV"] = AV
+            values["initial_feh"] = feh
+            values["requested_age"] = age
 
-        if all_As:
+        if all_As and isinstance(values, (pd.DataFrame, dict)):
             _, _, _, true_mags = self.interp_mag([mass, eeps, feh, distance, 0], bands=bands)
-            mBol = values["Mbol"]
             for b, true_mag in zip(bands, true_mags.T):
                 values[f"A_{b}"] = values[f"{b}_mag"] - true_mag
 
@@ -662,6 +675,19 @@ class ModelGridInterpolator(object):
 
 
 class EvolutionTrackInterpolator(ModelGridInterpolator):
+    """Interpolator for stellar evolution tracks.
+
+    This class provides interpolation of stellar evolution tracks,
+    where mass is a direct parameter rather than being derived from EEP.
+
+    Attributes
+    ----------
+    param_names : tuple
+        Parameter names: ('mass', 'eep', 'feh', 'distance', 'AV').
+    eep_replaces : str
+        Which parameter EEP replaces ('age').
+    """
+
     param_names = ("mass", "eep", "feh", "distance", "AV")
     eep_replaces = "age"
 
@@ -689,6 +715,19 @@ class EvolutionTrackInterpolator(ModelGridInterpolator):
 
 
 class IsochroneInterpolator(ModelGridInterpolator):
+    """Interpolator for stellar isochrones.
+
+    This class provides interpolation of stellar isochrones,
+    where EEP (Equivalent Evolutionary Phase) is used instead of mass.
+
+    Attributes
+    ----------
+    param_names : tuple
+        Parameter names: ('eep', 'age', 'feh', 'distance', 'AV').
+    eep_replaces : str
+        Which parameter EEP replaces ('mass').
+    """
+
     param_names = ("eep", "age", "feh", "distance", "AV")
     eep_replaces = "mass"
 

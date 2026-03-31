@@ -1,3 +1,15 @@
+"""Cluster modeling and fitting.
+
+This module provides tools for fitting stellar cluster properties,
+including:
+- Cluster model definition
+- Simulated cluster generation
+- Cluster property fitting
+
+The StarClusterModel fits age, metallicity, distance, extinction,
+and binary fraction to a catalog of cluster member stars.
+"""
+
 import re
 
 import numpy as np
@@ -35,8 +47,42 @@ def clusterfit(
     rank=0,
     max_iter=0,
 ):
+    """Fit cluster properties to a table of member stars.
 
-    """Fit cluster properties to a table of member stars
+    Parameters
+    ----------
+    starfile : str
+        Path to HDF file containing the star catalog.
+    bands : list, optional
+        List of photometric bands to use.
+    props : list, optional
+        List of additional properties (e.g., parallax).
+    models : str, optional
+        Stellar models to use (default: 'mist').
+    max_distance : float, optional
+        Maximum distance in pc (default: 10000).
+    mineep : int, optional
+        Minimum EEP to consider (default: 200).
+    maxeep : int, optional
+        Maximum EEP to consider (default: 800).
+    maxAV : float, optional
+        Maximum A_V extinction (default: 0.1).
+    minq : float, optional
+        Minimum mass ratio for binaries (default: 0.2).
+    overwrite : bool, optional
+        If True, overwrite existing fit results (default: False).
+    nlive : int, optional
+        Number of live points for MultiNest (default: 1000).
+    name : str, optional
+        Name of the cluster.
+    halo_fraction : float, optional
+        Fraction of stars from halo for metallicity prior (default: 0.5).
+    comm : object, optional
+        MPI communicator for parallel fitting.
+    rank : int, optional
+        MPI rank (default: 0).
+    max_iter : int, optional
+        Maximum iterations for MultiNest (default: 0, no limit).
     """
 
     if rank == 0:
@@ -69,6 +115,41 @@ def clusterfit(
 
 
 class SimulatedCluster(StarCatalog):
+    """Simulated stellar cluster with known properties.
+
+    Generates a simulated cluster with specified stellar population
+    parameters for testing and validation purposes.
+
+    Parameters
+    ----------
+    N : int
+        Number of stars in the cluster.
+    age : float
+        Log10(age) of the cluster in years.
+    feh : float
+        Metallicity [Fe/H].
+    distance : float
+        Distance in parsecs.
+    AV : float
+        V-band extinction A_V.
+    alpha : float
+        IMF power law index.
+    gamma : float
+        Mass ratio power law index.
+    fB : float
+        Binary fraction.
+    bands : str, optional
+        Photometric bands (default: 'JHK').
+    mass_range : tuple, optional
+        (min, max) mass range in solar masses (default: (0.3, 2.5)).
+    distance_scatter : float, optional
+        Gaussian scatter in distance (default: 5 pc).
+    models : str, optional
+        Stellar models to use (default: 'mist').
+    phot_unc : float, optional
+        Photometric uncertainty (default: 0.01 mag).
+    """
+
     def __init__(
         self,
         N,
@@ -180,6 +261,37 @@ class SimulatedCluster(StarCatalog):
 
 
 class StarClusterModel(StarModel):
+    """Model for fitting stellar cluster properties.
+
+    This class fits the properties of a stellar cluster (age, metallicity,
+    distance, extinction, IMF slope, mass ratio slope, binary fraction)
+    to a catalog of observed member stars.
+
+    Parameters
+    ----------
+    ic : IsochroneInterpolator
+        Isochrone interpolator for the stellar models.
+    stars : StarCatalog
+        Catalog of cluster member stars.
+    name : str, optional
+        Name of the cluster.
+    halo_fraction : float, optional
+        Fraction of stars from halo for metallicity prior (default: 0.5).
+    max_AV : float, optional
+        Maximum A_V extinction (default: 1.0).
+    max_distance : float, optional
+        Maximum distance in pc (default: 50000).
+    use_emcee : bool, optional
+        Use emcee instead of MultiNest (default: False).
+    eep_bounds : tuple, optional
+        (min, max) EEP values.
+    mass_bounds : tuple, optional
+        (min, max) mass values in solar masses.
+    minq : float, optional
+        Minimum mass ratio for binaries (default: 0.1).
+    **kwargs
+        Additional arguments passed to StarCatalog.
+    """
 
     param_names = ["age", "feh", "distance", "AV", "alpha", "gamma", "fB"]
 
@@ -398,7 +510,7 @@ class StarClusterModel(StarModel):
                 except IndexError:
                     lnprob = np.array([chain[-1]])
                     chain = np.array([chain[:-1]])
-            except:
+            except Exception:
                 getLogger().error("Error loading chains from {}".format(filename))
                 raise
         else:
@@ -425,6 +537,40 @@ def simulate_cluster(
     distance_scatter=5,
     iso=None,
 ):
+    """Simulate a stellar cluster with specified properties.
+
+    Parameters
+    ----------
+    N : int
+        Number of stars to generate.
+    age : float
+        Log10(age) of the cluster in years.
+    feh : float
+        Metallicity [Fe/H].
+    distance : float
+        Distance in parsecs.
+    AV : float
+        V-band extinction A_V.
+    alpha : float
+        IMF power law index.
+    gamma : float
+        Mass ratio power law index.
+    fB : float
+        Binary fraction.
+    bands : str, optional
+        Photometric bands (default: 'JHK').
+    mass_range : tuple, optional
+        (min, max) mass range in solar masses (default: (0.8, 2.5)).
+    distance_scatter : float, optional
+        Gaussian scatter in distance (default: 5 pc).
+    iso : IsochroneInterpolator, optional
+        Isochrone interpolator to use. If not provided, uses MIST.
+
+    Returns
+    -------
+    StarCatalog
+        Catalog of simulated stars with observed properties.
+    """
     u = np.random.random(N)
     is_binary = u < fB
 

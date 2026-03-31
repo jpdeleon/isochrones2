@@ -1,3 +1,12 @@
+"""Utility functions for the isochrones package.
+
+This module provides various utility functions including:
+- Magnitude manipulation (adding magnitudes, conversions)
+- Distance calculations
+- File download utilities
+- Numerical utilities (interpolation, polynomial evaluation)
+"""
+
 import requests
 import os
 
@@ -9,18 +18,40 @@ from .logger import getLogger
 
 
 def band_pairs(bands):
+    """Generate all adjacent band pairs for color calculations.
+
+    Parameters
+    ----------
+    bands : list
+        List of photometric band names.
+
+    Returns
+    -------
+    list
+        List of (band1, band2) tuples for all adjacent pairs.
+    """
     return [(bands[i], bands[-1]) for i in range(len(bands) - 1)]
 
 
 def download_file(url, path=None, clobber=False):
-    """
-    thanks to: https://stackoverflow.com/questions/16694907/how-to-download-large-file-in-python-with-requests-py
+    """Download a file from a URL.
 
-    path : str
-        local path to download to.
+    Parameters
+    ----------
+    url : str
+        URL to download from.
+    path : str, optional
+        Local path to save to. If not provided, uses current directory.
+    clobber : bool, optional
+        If True, overwrite existing file (default: False).
+
+    Returns
+    -------
+    str
+        Local path where file was saved.
     """
     if path is None:
-        local_filename = os.path.join(directory, url.split("/")[-1])
+        local_filename = url.split("/")[-1]
     else:
         local_filename = path
 
@@ -28,31 +59,40 @@ def download_file(url, path=None, clobber=False):
         getLogger().info("{} exists; not downloading.".format(local_filename))
         return local_filename
 
-    # NOTE the stream=True parameter
     r = requests.get(url, stream=True)
+    r.raise_for_status()
     with open(local_filename, "wb") as f:
         for chunk in r.iter_content(chunk_size=1024):
-            if chunk:  # filter out keep-alive new chunks
+            if chunk:
                 f.write(chunk)
-                # f.flush() commented by recommendation from J.F.Sebastian
     return local_filename
 
 
 def addmags(*mags):
-    """
-    mags is either list of magnitudes or list of (mag, err) pairs
+    """Add magnitudes from multiple sources.
+
+    Parameters
+    ----------
+    *mags : float or tuple
+        Either a list of magnitudes or a list of (mag, err) pairs.
+
+    Returns
+    -------
+    float or tuple
+        If input is magnitudes only, returns total magnitude.
+        If input includes uncertainties, returns (total_mag, total_err).
     """
     tot = 0
     uncs = []
     for mag in mags:
-        try:
-            tot += 10 ** (-0.4 * mag)
-        except:
+        if isinstance(mag, (tuple, list)):
             m, dm = mag
             f = 10 ** (-0.4 * m)
             tot += f
             unc = f * (1 - 10 ** (-0.4 * dm))
             uncs.append(unc)
+        else:
+            tot += 10 ** (-0.4 * mag)
 
     totmag = -2.5 * np.log10(tot)
     if len(uncs) > 0:
@@ -64,8 +104,17 @@ def addmags(*mags):
 
 @nb.jit(nopython=True)
 def fast_addmags(mags):
-    """
-    mags is list of magnitudes
+    """Add magnitudes using numba JIT compilation.
+
+    Parameters
+    ----------
+    mags : array_like
+        List of magnitudes to add.
+
+    Returns
+    -------
+    float
+        Total magnitude.
     """
     tot = 0
     for mag in mags:
@@ -74,15 +123,25 @@ def fast_addmags(mags):
 
 
 def distance(pos0, pos1):
-    """distance between two positions defined by (separation, PA)
+    """Calculate angular distance between two positions.
+
+    Parameters
+    ----------
+    pos0 : tuple
+        Position as (separation, PA) in arcsec and degrees.
+    pos1 : tuple
+        Position as (separation, PA) in arcsec and degrees.
+
+    Returns
+    -------
+    float
+        Angular distance between positions.
     """
     r0, pa0 = pos0
-    # getLogger().debug('r0={}, pa0={} (from {})'.format(r0, pa0, self))
     ra0 = r0 * np.sin(pa0 * np.pi / 180)
     dec0 = r0 * np.cos(pa0 * np.pi / 180)
 
     r1, pa1 = pos1
-    # getLogger().debug('r1={}, pa1={} (from {})'.format(r0, pa0, other))
     ra1 = r1 * np.sin(pa1 * np.pi / 180)
     dec1 = r1 * np.cos(pa1 * np.pi / 180)
 
