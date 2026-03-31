@@ -217,12 +217,12 @@ class StarModel(object):
     def _parse_band(cls, kw):
         """Returns photometric band from inifile keyword
         """
-        m = re.search(r"[a-zA-Z0-9_]+", kw)
+        m = re.search(r"([a-zA-Z0-9]+)(_\d+)?", kw)
         if m:
-            if m.group(0) in cls._not_a_band:
+            if m.group(1) in cls._not_a_band:
                 return None
             else:
-                return m.group(0)
+                return m.group(1)
 
     @classmethod
     def get_bands(cls, inifile):
@@ -350,7 +350,11 @@ class StarModel(object):
 
                     # Overwrite value of 'relative' if it is explicitly set
                     if "relative" in c[k]:
-                        relative = c[k]["relative"] == "True"
+                        rel_val = c[k]["relative"]
+                        if isinstance(rel_val, bool):
+                            relative = rel_val
+                        else:
+                            relative = rel_val.lower() in ("true", "1", "yes")
 
                     # Check if there are multiple stars (defined by whether
                     # any separations are listed).
@@ -380,7 +384,8 @@ class StarModel(object):
                                 bands.append(b)
 
                     # If a blank tags needs to be created, do so
-                    if len(bands) > 0 and (len(tags) == 0 or bands[0] in c[k]):
+                    # Only add blank tag if there are no tagged separations
+                    if len(bands) > 0 and len(tags) == 0:
                         tags.append("")
 
                     # For each band and each star, create a row
@@ -889,12 +894,12 @@ class StarModel(object):
 
     def fit_mcmc_old(
         self,
-        nwalkers=300,
+        nwalkers=50,
         nburn=200,
-        niter=100,
+        niter=1000,
         p0=None,
-        initial_burn=None,
-        ninitial=50,
+        initial_burn=True,
+        ninitial=500,
         loglike_kwargs=None,
         **kwargs
     ):
@@ -950,12 +955,12 @@ class StarModel(object):
             logger.debug("Generating initial p0 for {} walkers...".format(nwalkers))
             p0 = self.emcee_p0(nwalkers)
             if initial_burn:
-                sampler = emcee.EnsembleSampler(nwalkers, npars, self.lnpost, **kwargs)
-                # ninitial = 300 #should this be parameter?
+                sampler_kwargs = {k: v for k, v in kwargs.items() if k not in ("verbose", "overwrite")}
+                sampler = emcee.EnsembleSampler(nwalkers, npars, self.lnpost, **sampler_kwargs)
                 state = sampler.run_mcmc(p0, ninitial)
 
                 # Choose walker with highest final lnprob to seed new one
-                i, j = np.unravel_index(sampler.lnprobability.argmax(), sampler.shape)
+                i, j = np.unravel_index(sampler.lnprobability.argmax(), sampler.lnprobability.shape)
                 p0_best = sampler.chain[i, j, :]
                 logger.debug("After initial burn, p0={}".format(p0_best))
                 p0 = p0_best * (1 + rand.normal(size=p0.shape) * 0.001)
@@ -1392,7 +1397,7 @@ class BasicStarModel(StarModel):
 
         self.ra = ra
         self.dec = dec
-        self.obs = None
+        self.obs = obs
 
         if N > 1 and ic.eep_replaces == "age":
             raise ValueError("Can only fit mulitple stars with IsochroneInterpolator!")
