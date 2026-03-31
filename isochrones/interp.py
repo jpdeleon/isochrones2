@@ -55,7 +55,7 @@ def find_indices(point, iis):
             indices[i] = ix
             dx = ii[ix + 1] - ii[ix]
             norm_distances[i] = (x - ii[ix]) / dx
-        out_of_bounds &= x < ii[0] or x > ii[n - 1]
+        out_of_bounds |= x < ii[0] or x > ii[n - 1]
 
     return indices, norm_distances, out_of_bounds
 
