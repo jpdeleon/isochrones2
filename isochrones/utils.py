@@ -1,57 +1,72 @@
 """Utility functions for the isochrones package.
 
-This module provides various utility functions including:
-- Magnitude manipulation (adding magnitudes, conversions)
-- Distance calculations
-- File download utilities
-- Numerical utilities (interpolation, polynomial evaluation)
+This module provides general-purpose utilities including:
+- Magnitude arithmetic (adding magnitudes with errors)
+- File downloading
+- Numerical utilities (trapezoidal integration, polynomial evaluation)
+- Coordinate transformations
+
+Functions:
+    band_pairs: Generate pairs of photometric bands for color calculations.
+    download_file: Download a file from a URL to a local path.
+    addmags: Add magnitudes or magnitudes with uncertainties.
+    fast_addmags: Fast JIT-compiled magnitude addition.
+    distance: Calculate angular separation between two positions.
+    trapz: Trapezoidal integration.
+    polyval: Evaluate a polynomial.
 """
 
-import requests
+from __future__ import print_function, division
+from __future__ import annotations
+
+import requests  # type: ignore[import-untyped]
 import os
+from typing import Union, Tuple, List, Optional
 
 import numpy as np
 import numba as nb
 from math import log10
 
 from .logger import getLogger
+from .config import ISOCHRONES
 
 
-def band_pairs(bands):
-    """Generate all adjacent band pairs for color calculations.
+def band_pairs(bands: List[str]) -> List[Tuple[str, str]]:
+    """Generate pairs of photometric bands for color calculations.
 
-    Parameters
-    ----------
-    bands : list
-        List of photometric band names.
+    Creates pairs of bands where each band is paired with the last band
+    in the list (typically used for calculating colors).
 
-    Returns
-    -------
-    list
-        List of (band1, band2) tuples for all adjacent pairs.
+    Args:
+        bands: List of photometric band names.
+
+    Returns:
+        List of tuples (band_i, last_band) for i in range(len(bands)-1).
+
+    Examples:
+        >>> band_pairs(['G', 'BP', 'RP', 'J', 'H', 'K'])
+        [('G', 'K'), ('BP', 'K'), ('RP', 'K'), ('J', 'K'), ('H', 'K')]
     """
     return [(bands[i], bands[-1]) for i in range(len(bands) - 1)]
 
 
-def download_file(url, path=None, clobber=False):
-    """Download a file from a URL.
+def download_file(url: str, path: Optional[str] = None, clobber: bool = False) -> str:
+    """Download a file from a URL to a local path.
 
-    Parameters
-    ----------
-    url : str
-        URL to download from.
-    path : str, optional
-        Local path to save to. If not provided, uses current directory.
-    clobber : bool, optional
-        If True, overwrite existing file (default: False).
+    Args:
+        url: URL of the file to download.
+        path: Local path to save the file. If None, uses the URL filename
+            in the ISOCHRONES data directory. Defaults to None.
+        clobber: If True, overwrite existing files. Defaults to False.
 
-    Returns
-    -------
-    str
-        Local path where file was saved.
+    Returns:
+        str: Path to the downloaded file.
+
+    Raises:
+        requests.RequestException: If the download fails.
     """
     if path is None:
-        local_filename = url.split("/")[-1]
+        local_filename = os.path.join(ISOCHRONES, url.split("/")[-1])
     else:
         local_filename = path
 
@@ -60,7 +75,6 @@ def download_file(url, path=None, clobber=False):
         return local_filename
 
     r = requests.get(url, stream=True)
-    r.raise_for_status()
     with open(local_filename, "wb") as f:
         for chunk in r.iter_content(chunk_size=1024):
             if chunk:
@@ -68,24 +82,31 @@ def download_file(url, path=None, clobber=False):
     return local_filename
 
 
-def addmags(*mags):
-    """Add magnitudes from multiple sources.
+def addmags(
+    *mags: Union[float, Tuple[float, float]]
+) -> Union[float, Tuple[float, float]]:
+    """Add magnitudes or magnitudes with uncertainties.
 
-    Parameters
-    ----------
-    *mags : float or tuple
-        Either a list of magnitudes or a list of (mag, err) pairs.
+    Performs magnitude addition using the inverse relationship between
+    magnitude and flux. Supports both plain magnitudes and magnitude-error
+    pairs.
 
-    Returns
-    -------
-    float or tuple
-        If input is magnitudes only, returns total magnitude.
-        If input includes uncertainties, returns (total_mag, total_err).
+    Args:
+        *mags: Either a list of magnitude values (float) or a list of
+            (magnitude, error) tuples.
+
+    Returns:
+        If input contains only magnitudes: total magnitude as float.
+        If input contains magnitude-error pairs: tuple of (total_magnitude, total_error).
+
+    Examples:
+        >>> addmags(5.0, 4.0, 3.0)  # Just magnitudes
+        >>> addmags((5.0, 0.1), (4.0, 0.2))  # With errors
     """
-    tot = 0
-    uncs = []
+    tot = 0.0
+    uncs: List[float] = []
     for mag in mags:
-        if isinstance(mag, (tuple, list)):
+        if isinstance(mag, tuple):
             m, dm = mag
             f = 10 ** (-0.4 * m)
             tot += f
@@ -103,39 +124,36 @@ def addmags(*mags):
 
 
 @nb.jit(nopython=True)
-def fast_addmags(mags):
-    """Add magnitudes using numba JIT compilation.
+def fast_addmags(mags: np.ndarray) -> float:
+    """Fast JIT-compiled magnitude addition.
 
-    Parameters
-    ----------
-    mags : array_like
-        List of magnitudes to add.
+    Args:
+        mags: Array of magnitude values.
 
-    Returns
-    -------
-    float
-        Total magnitude.
+    Returns:
+        float: Total magnitude from adding all input magnitudes.
     """
-    tot = 0
+    tot = 0.0
     for mag in mags:
         tot += 10 ** (-0.4 * mag)
     return -2.5 * log10(tot)
 
 
-def distance(pos0, pos1):
-    """Calculate angular distance between two positions.
+def distance(
+    pos0: Tuple[float, float], pos1: Tuple[float, float]
+) -> float:
+    """Calculate angular separation between two positions.
 
-    Parameters
-    ----------
-    pos0 : tuple
-        Position as (separation, PA) in arcsec and degrees.
-    pos1 : tuple
-        Position as (separation, PA) in arcsec and degrees.
+    Positions are defined by (separation, position angle) pairs in
+    (r, PA) format, where r is angular separation in degrees and PA
+    is position angle in degrees.
 
-    Returns
-    -------
-    float
-        Angular distance between positions.
+    Args:
+        pos0: First position as (separation, PA) tuple in degrees.
+        pos1: Second position as (separation, PA) tuple in degrees.
+
+    Returns:
+        float: Angular separation between the two positions.
     """
     r0, pa0 = pos0
     ra0 = r0 * np.sin(pa0 * np.pi / 180)
@@ -151,9 +169,18 @@ def distance(pos0, pos1):
 
 
 @nb.jit(nopython=True)
-def trapz(y, x):
+def trapz(y: np.ndarray, x: np.ndarray) -> float:
+    """Trapezoidal integration.
+
+    Args:
+        y: Function values at points in x.
+        x: x-coordinates of the points.
+
+    Returns:
+        float: Approximate integral of y with respect to x.
+    """
     n = len(y)
-    tot = 0
+    tot = 0.0
 
     for i in range(n - 1):
         i2 = i + 1
@@ -163,9 +190,21 @@ def trapz(y, x):
 
 
 @nb.jit(nopython=True)
-def polyval(p, x):
+def polyval(p: np.ndarray, x: float) -> float:
+    """Evaluate a polynomial.
+
+    Evaluates p[0]*x^(N-1) + p[1]*x^(N-2) + ... + p[N-1] where N is
+    the length of p.
+
+    Args:
+        p: Polynomial coefficients, highest power first.
+        x: Value at which to evaluate the polynomial.
+
+    Returns:
+        float: Polynomial evaluated at x.
+    """
     N = len(p)
-    result = 0
+    result = 0.0
     for i in range(N):
         result += p[i] * x ** (N - 1 - i)
     return result

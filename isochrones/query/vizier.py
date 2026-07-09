@@ -12,6 +12,7 @@ from .catalog import Catalog
 
 class VizierCatalog(Catalog):
     columns = ("**", "_r", "_RAJ2000", "_DEJ2000")
+    vizier_name: str
 
     def _run_query(self):
         if self._empty:

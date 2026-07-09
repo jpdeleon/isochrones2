@@ -17,5 +17,12 @@ Typical usage::
 """
 
 from .version import __version__
-from .isochrone import get_ichrone
-from .starmodel import StarModel, SingleStarModel, BinaryStarModel, TripleStarModel
+
+try:
+    __ISOCHRONES_SETUP__  # type: ignore[used-before-def]
+except NameError:
+    __ISOCHRONES_SETUP__ = False
+
+if not __ISOCHRONES_SETUP__:
+    from .isochrone import get_ichrone
+    from .starmodel import StarModel, SingleStarModel, BinaryStarModel, TripleStarModel

@@ -2,6 +2,7 @@ import os
 import re
 import itertools
 import warnings
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -39,6 +40,23 @@ class StellarModelGrid(Grid):
         "logL",
         "Mbol",
     )
+
+    name: str
+    eep_col: str
+    age_col: str
+    feh_col: str
+    mass_col: str
+    initial_mass_col: str
+    logTeff_col: str
+    logg_col: str
+    logL_col: str
+    filename_pattern: str
+    eep_replaces: str
+    fes: list
+    fehs: list
+    masses: list
+    n_eep: int
+    _n_masses: Optional[int] = None
 
     @property
     def prop_map(self):
@@ -130,7 +148,7 @@ class StellarModelGrid(Grid):
 
         if not compute:
             try:
-                dm_deep = pd.read_hdf(filename, "dm_deep")
+                dm_deep = pd.read_hdf(filename, key="dm_deep")
             except Exception:
                 compute = True
 
@@ -147,8 +165,8 @@ class StellarModelGrid(Grid):
                 deriv = np.gradient(subdf["initial_mass"], subdf["eep"])
                 subdf.loc[:, "dm_deep"] = deriv
 
-            df.dm_deep.to_hdf(filename, "dm_deep")
-            dm_deep = pd.read_hdf(filename, "dm_deep")
+            df.dm_deep.to_hdf(filename, key="dm_deep")
+            dm_deep = pd.read_hdf(filename, key="dm_deep")
 
         return dm_deep
 
@@ -240,8 +258,10 @@ class StellarModelGrid(Grid):
             return self._array_lengths
 
     @property
-    def n_masses(self):
+    def n_masses(self) -> int:
         try:
+            if self._n_masses is None:
+                self._n_masses = len(self.masses)
             return self._n_masses
         except AttributeError:
             self._n_masses = len(self.masses)
@@ -265,14 +285,15 @@ class ModelGridInterpolator(object):
         The bolometric correction grid class.
     """
 
-    grid_type = None
-    bc_type = None
+    grid_type: type
+    bc_type: type
+    track: "ModelGridInterpolator"
 
     # transformation from desired param order to that expected by interp functions
     _param_index_order = (1, 2, 0, 3, 4)
 
     def __init__(self, bands=None, **kwargs):
-        self.bands = bands if bands is not None else list(self.bc_type.default_bands)
+        self.bands = bands if bands is not None else list(self.bc_type.default_bands)  # type: ignore
 
         self._model_grid = None
         self._bc_grid = None
@@ -334,21 +355,25 @@ class ModelGridInterpolator(object):
     @property
     def masses(self):
         if not self.eep_replaces == "age":
-            raise AttributeError("Mass is not a dimension of this model grid!".format(self.grid_type))
+            raise AttributeError("Mass is not a dimension of this model grid!")
         if self._masses is None:
             self._masses = self.model_grid.masses
         return self._masses
 
     @property
-    def name(self):
-        return self.grid_type.name
+    def name(self) -> str:
+        return self.grid_type.name  # type: ignore
 
     @property
+<<<<<<< HEAD
     def eep_replaces(self):
+=======
+    def eep_replaces(self) -> str:
+>>>>>>> update
         return self.model_grid.eep_replaces
 
     @property
-    def model_grid(self):
+    def model_grid(self) -> StellarModelGrid:
         if self._model_grid is None:
             self._model_grid = self.grid_type(**self.kwargs)
         return self._model_grid
@@ -461,7 +486,7 @@ class ModelGridInterpolator(object):
         if isinstance(props, str):
             props = [props]
         eep = self.get_eep(mass, age, feh, approx=approx)
-        values = self.interp_value([mass, eep, feh])
+        values = self.interp_value([mass, eep, feh], props)
         if np.size(values) == 1:
             return float(values)
         else:
@@ -693,7 +718,7 @@ class EvolutionTrackInterpolator(ModelGridInterpolator):
 
     # Relation between parameters and the order of indices in the grid
     _param_index_order = (2, 0, 1, 3, 4)
-    _iso_type = None
+    _iso_type: Optional[type] = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -733,7 +758,7 @@ class IsochroneInterpolator(ModelGridInterpolator):
 
     # Relation between parameters and the order of indices in the grid
     _param_index_order = (1, 2, 0, 3, 4)
-    _track_type = None
+    _track_type: Optional[type] = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

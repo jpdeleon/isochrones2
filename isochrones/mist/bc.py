@@ -156,7 +156,7 @@ class MISTBolometricCorrectionGrid(BolometricCorrectionGrid):
 
     )
 
-    default_bands = ("J", "H", "K", "G", "BP", "RP", "W1", "W2", "W3", "TESS", "Kepler")
+    default_bands = ["J", "H", "K", "G", "BP", "RP", "W1", "W2", "W3", "TESS", "Kepler"]
 
     def get_df(self, *args, **kwargs):
         df = super().get_df(*args, **kwargs)

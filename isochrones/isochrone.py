@@ -1,9 +1,20 @@
+"""Base isochrone classes and utilities.
+
+This module provides the base classes and factory function for loading
+isochrone/interpolator objects for various stellar evolution models.
+"""
+
+from __future__ import annotations
+
 from .config import on_rtd
 
-import os, re, sys
+import os
+import re
+import sys
 import warnings
 import itertools
 import pickle
+from typing import TYPE_CHECKING, Optional, List, Union, Any, Type
 
 from .logger import getLogger
 
@@ -25,14 +36,10 @@ if not on_rtd:
 
     from astropy import constants as const
 
-    # Define useful constants
     G = const.G.cgs.value
     MSUN = const.M_sun.cgs.value
     RSUN = const.R_sun.cgs.value
 
-    # from .extinction import EXTINCTION, LAMBDA_EFF, extcurve, extcurve_0
-    # from .interp import DFInterpolator, searchsorted, find_closest3
-    # from .utils import polyval
     from .models import ModelGridInterpolator
 
 else:
@@ -42,14 +49,44 @@ else:
 
 from .config import ISOCHRONES
 
-# from .grid import ModelGrid
 
+def get_ichrone(
+    models: Union[str, Type, "ModelGridInterpolator"],
+    bands: Optional[List[str]] = None,
+    default: bool = False,
+    tracks: bool = False,
+    basic: bool = False,
+    **kwargs: Any
+) -> "ModelGridInterpolator":
+    """Get an Isochrone object by name or type with the specified bands.
 
-def get_ichrone(models, bands=None, default=False, tracks=False, basic=False, **kwargs):
-    """Gets Isochrone Object by name, or type, with the right bands
+    This is the main factory function for loading stellar model interpolators.
+    It supports MIST (MESA Isochrones and Stellar Tracks) models and can
+    return either isochrones or evolution tracks.
 
-    If `default` is `True`, then will set bands
-    to be the union of bands and default_bands
+    Args:
+        models: Either a string name ('mist'), a ModelGridInterpolator subclass,
+            or an existing ModelGridInterpolator instance.
+        bands: List of photometric band names for which to compute magnitudes.
+            If None, uses default bands for the model type.
+        default: If True, union of provided bands with default bands.
+            Defaults to False.
+        tracks: If True, return evolution tracks instead of isochrones.
+            Defaults to False.
+        basic: If True, return basic MIST isochrones (simpler interpolation).
+            Defaults to False.
+        **kwargs: Additional keyword arguments passed to the isochrone constructor.
+
+    Returns:
+        ModelGridInterpolator: An isochrone or evolution track interpolator object.
+
+    Raises:
+        ValueError: If the models argument is not recognized.
+
+    Examples:
+        >>> from isochrones import get_ichrone
+        >>> mist = get_ichrone('mist', bands=['G', 'BP', 'RP', 'J', 'H', 'K'])
+        >>> tracks = get_ichrone('mist', tracks=True)
     """
     if not bands:
         bands = None
@@ -57,7 +94,7 @@ def get_ichrone(models, bands=None, default=False, tracks=False, basic=False, **
     if isinstance(models, ModelGridInterpolator):
         return models
 
-    if type(models) is type(type):
+    if isinstance(models, type):
         ichrone = models(bands)
     elif models == "mist":
         if tracks:
@@ -66,9 +103,9 @@ def get_ichrone(models, bands=None, default=False, tracks=False, basic=False, **
             ichrone = MIST_EvolutionTrack(bands=bands, **kwargs)
         else:
             if basic:
-                from isochrones.mist import MISTBasic_Isochrone
+                from isochrones.mist import MIST_BasicIsochrone
 
-                ichrone = MISTBasic_Isochrone(bands=bands, **kwargs)
+                ichrone = MIST_BasicIsochrone(bands=bands, **kwargs)
             else:
                 from isochrones.mist import MIST_Isochrone
 

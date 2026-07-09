@@ -1,5 +1,30 @@
-def default_max_eep(mass):
-    """For MIST v1.2
+"""Utility functions for MIST model handling.
+
+This module provides utility functions for working with MIST (MESA Isochrones
+and Stellar Tracks) models, particularly for determining maximum EEP
+(Equal Evolutionary Point) values.
+"""
+
+from __future__ import annotations
+
+
+def default_max_eep(mass: float) -> int:
+    """Get default maximum EEP for a given mass (MIST v1.2).
+
+    This function returns the default maximum EEP value for a stellar
+    mass when specific metallicity is not provided.
+
+    Args:
+        mass: Stellar mass in solar masses.
+
+    Returns:
+        Maximum EEP value.
+
+    Examples:
+        >>> default_max_eep(0.5)
+        454
+        >>> default_max_eep(1.0)
+        1710
     """
     if mass < 0.6:
         return 454
@@ -13,10 +38,27 @@ def default_max_eep(mass):
         return 808
 
 
-def max_eep(mass, feh):
-    """For MIST v1.2
+def max_eep(mass: float, feh: float) -> int:
+    """Get maximum EEP for a given mass and metallicity (MIST v1.2).
+
+    This function returns the maximum EEP (Equal Evolutionary Point)
+    value for a star of given mass and metallicity. The maximum EEP
+    represents the end of the evolution track.
+
+    Args:
+        mass: Stellar mass in solar masses.
+        feh: Metallicity [Fe/H].
+
+    Returns:
+        Maximum EEP value.
+
+    Examples:
+        >>> max_eep(1.0, 0.0)
+        1710
+        >>> max_eep(0.5, -3.0)
+        454
     """
-    eep = None
+    eep: int = 0
     if feh == -4.0:
         if mass < 0.6:
             eep = 454
@@ -53,7 +95,7 @@ def max_eep(mass, feh):
         if 0.7 <= mass <= 0.75:
             eep = 808
 
-    if eep is None:
+    if eep == 0:
         return default_max_eep(mass)
     else:
         return eep

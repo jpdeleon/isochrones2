@@ -86,7 +86,7 @@ def clusterfit(
     """
 
     if rank == 0:
-        stars = pd.read_hdf(starfile)
+        stars = pd.read_hdf(starfile, key="df")
 
         cat = StarCatalog(stars, bands=bands, props=props)
         print("bands = {}".format(cat.bands))

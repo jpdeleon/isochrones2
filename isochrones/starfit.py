@@ -1,5 +1,17 @@
-import os, os.path, re, sys
+"""Main star fitting function and utilities.
+
+This module provides the starfit function for fitting stellar parameters
+from observational data using Bayesian inference with stellar evolution models.
+"""
+
+from __future__ import annotations
+
+import os
+import os.path
+import re
+import sys
 import time
+from typing import Optional, List, Any, Dict, Union
 
 from .config import on_rtd
 
@@ -16,24 +28,56 @@ from .logger import initLogging
 
 
 def starfit(
-    folder,
-    multiplicities=["single"],
-    models="mist",
-    feh_prior="local",
-    use_emcee=False,
-    plot_only=False,
-    overwrite=False,
-    verbose=False,
-    logger=None,
-    starmodel_type=None,
-    ini_file="star.ini",
-    no_plots=False,
-    bands=None,
-    **kwargs
-):
-    """ Runs starfit routine for a given folder.
+    folder: str,
+    multiplicities: List[str] = ["single"],
+    models: str = "mist",
+    feh_prior: str = "local",
+    use_emcee: bool = False,
+    plot_only: bool = False,
+    overwrite: bool = False,
+    verbose: bool = False,
+    logger: Optional[Any] = None,
+    starmodel_type: Optional[type["BasicStarModel"]] = None,
+    ini_file: str = "star.ini",
+    no_plots: bool = False,
+    bands: Optional[List[str]] = None,
+    **kwargs: Any
+) -> tuple[Optional["StarModel"], Any]:
+    """Run starfit routine for a given folder.
 
-    feh_prior : 'flat' or 'local'
+    This function reads an INI configuration file containing observational
+    data and fits stellar parameters using Bayesian inference with the
+    specified stellar evolution models.
+
+    Args:
+        folder: Path to the folder containing the star.ini file and where
+            results will be saved.
+        multiplicities: List of stellar system types to fit. Options include
+            'single', 'binary', 'triple'. Defaults to ['single'].
+        models: Stellar model name. Defaults to 'mist'.
+        feh_prior: Metallicity prior type. Options: 'flat' (uniform),
+            'local' (localized around typical values). Defaults to 'local'.
+        use_emcee: If True, use emcee for MCMC sampling. Defaults to False.
+        plot_only: If True, only create plots from existing results.
+            Defaults to False.
+        overwrite: If True, overwrite existing results. Defaults to False.
+        verbose: If True, print detailed progress information.
+            Defaults to False.
+        logger: Optional logger instance. If None, creates a new one.
+        starmodel_type: Optional StarModel subclass to use. If None,
+            uses BasicStarModel.
+        ini_file: Name of the INI configuration file. Defaults to 'star.ini'.
+        no_plots: If True, skip generating plots. Defaults to False.
+        bands: Optional list of photometric bands. If None, uses bands
+            from the INI file.
+        **kwargs: Additional keyword arguments.
+
+    Returns:
+        The fitted StarModel, or None if plot_only=True with no existing model.
+
+    Example:
+        >>> from isochrones import starfit
+        >>> model = starfit('/path/to/star/folder', multiplicities=['single', 'binary'])
     """
     nstars = {"single": 1, "binary": 2, "triple": 3}
 
@@ -121,7 +165,7 @@ def starfit(
                     if t_mod > t_plot:
                         make_corners = True
 
-            if (make_corners or plot_only) and not no_plots:
+            if (make_corners or plot_only) and not no_plots and mod is not None:
                 corner_base = os.path.join(folder, "{}_corner_{}".format(models, mult))
                 fig1, fig2 = mod.corner_plots(corner_base)
 
@@ -137,7 +181,7 @@ def starfit(
                 else:
                     make_magplot = False
 
-            if make_magplot:
+            if make_magplot and mod is not None:
                 fig = mod.mag_plot()
                 plt.savefig(os.path.join(folder, "{}_mags_{}.png".format(models, mult)))
 

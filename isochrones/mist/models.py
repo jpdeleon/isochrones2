@@ -32,11 +32,11 @@ class MISTModelGrid(StellarModelGrid):
     logL_col = "log_L"
 
     default_kwargs = {"version": "1.2", "vvcrit": 0.4, "kind": "full_isos"}
-    default_columns = StellarModelGrid.default_columns + ("delta_nu", "nu_max", "phase")
+    default_columns = tuple(StellarModelGrid.default_columns) + ("delta_nu", "nu_max", "phase")  # type: ignore[assignment]
 
     bounds = (("age", (5, 10.13)), ("feh", (-4, 0.5)), ("eep", (0, 1710)), ("mass", (0.1, 300)))
 
-    fehs = np.array(
+    fehs = np.array(  # type: ignore[assignment]
         (
             -4.00,
             -3.50,
@@ -61,10 +61,6 @@ class MISTModelGrid(StellarModelGrid):
     eep_labels = ("PMS", "ZAMS", "IAMS", "TAMS", "RGBTip", "ZAHB", "TAHB", "TPAGB", "post-AGB", "WDCS")
     eep_labels_highmass = ("PMS", "ZAMS", "IAMS", "TAMS", "RGBTip", "ZACHeB", "TACHeB", "C-burn")
     n_eep = 1710
-
-    @property
-    def foo(self):
-        return self._foo
 
     def max_eep(self, mass, feh):
         return max_eep(mass, feh)
@@ -96,9 +92,9 @@ class MISTIsochroneGrid(MISTModelGrid):
     logL_col = "log_L"
 
     default_kwargs = {"version": "1.2", "vvcrit": 0.4, "kind": "full_isos"}
-    index_cols = ("log10_isochrone_age_yr", "feh", "EEP")
+    index_cols = ["log10_isochrone_age_yr", "feh", "EEP"]
 
-    filename_pattern = "\.iso"
+    filename_pattern = r"\.iso"
     eep_replaces = "mass"
 
     @property
@@ -142,7 +138,7 @@ class MISTIsochroneGrid(MISTModelGrid):
                     break
         feh = cls.get_feh(filename)
         df = pd.read_csv(
-            filename, comment="#", delim_whitespace=True, skip_blank_lines=True, names=column_names
+            filename, comment="#", sep=r'\s+', skip_blank_lines=True, names=column_names
         )
         df["feh"] = feh
         return df
@@ -151,7 +147,7 @@ class MISTIsochroneGrid(MISTModelGrid):
 class MISTBasicIsochroneGrid(MISTIsochroneGrid):
 
     default_kwargs = {"version": "1.2", "vvcrit": 0.4, "kind": "basic_isos"}
-    default_columns = StellarModelGrid.default_columns + ("phase",)
+    default_columns = tuple(StellarModelGrid.default_columns) + ("phase",)  # type: ignore[assignment]
 
     def compute_additional_columns(self, df):
         """
@@ -164,7 +160,7 @@ class MISTBasicIsochroneGrid(MISTIsochroneGrid):
 class MISTEvolutionTrackGrid(MISTModelGrid):
     default_kwargs = {"version": "1.2", "vvcrit": 0.4, "afe": 0.0}
 
-    index_cols = ("initial_feh", "initial_mass", "EEP")
+    index_cols = ["initial_feh", "initial_mass", "EEP"]
 
     default_columns = tuple(set(MISTModelGrid.default_columns) - {"age"}) + (
         "interpolated",
@@ -233,19 +229,18 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
             **fmt_dict
         )
 
-    def get_directory_path(self, feh):
+    def get_directory_path(self, feh: float = 0.0, **kwargs) -> str:
         basename = self.get_file_basename(feh)
         return os.path.join(self.datadir, basename)
 
-    def get_tarball_url(self, feh):
+    def get_tarball_url(self, feh: float = 0.0, **kwargs) -> str:
         basename = self.get_file_basename(feh)
         version = self.kwargs["version"]
         return "http://waps.cfa.harvard.edu/MIST/data/tarballs_v{version}/{basename}.txz".format(
             version=version, basename=basename
         )
-        return os.path.join(self.datadir, "{}.txz".format(basename))
 
-    def get_tarball_file(self, feh):
+    def get_tarball_file(self, feh: float = 0.0, **kwargs) -> str:
         basename = self.get_file_basename(feh)
         return os.path.join(self.datadir, "{}.txz".format(basename))
 
@@ -255,7 +250,7 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
 
     @classmethod
     def get_mass(cls, filename):
-        m = re.search("(\d{5})M.track.eep", filename)
+        m = re.search(r"(\d{5})M.track.eep", filename)
         if m:
             return float(m.group(1)) / 100.0
         else:
@@ -263,6 +258,9 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
 
     @classmethod
     def to_df(cls, filename):
+        column_names: list = []
+        eep_first: int = 0
+        eep_last: int = 0
         with open(filename, "r", encoding="latin-1") as fin:
             while True:
                 line = fin.readline()
@@ -270,12 +268,12 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
                     line = line.split()
                     eep_first = int(line[2])
                     eep_last = int(line[-1])
-                elif re.match("#\s+ star_age", line):
+                elif re.match(r"#\s+ star_age", line):
                     column_names = line[1:].split()
                     break
         initial_mass = cls.get_mass(filename)
         df = pd.read_csv(
-            filename, comment="#", delim_whitespace=True, skip_blank_lines=True, names=column_names
+            filename, comment="#", sep=r'\s+', skip_blank_lines=True, names=column_names
         )
         df["initial_mass"] = initial_mass
         try:
@@ -305,14 +303,14 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
     def df_all_feh(self, feh):
         hdf_filename = self.get_feh_hdf_filename(feh)
         if os.path.exists(hdf_filename):
-            df = pd.read_hdf(hdf_filename, "df")
+            df = pd.read_hdf(hdf_filename, key="df")
         else:
             df = pd.concat([self.to_df(f) for f in self.get_feh_filenames(feh)])
             df["initial_feh"] = feh
             df = df.sort_values(by=list(self.index_cols))
             df.index = [df[c] for c in self.index_cols]
-            df.to_hdf(hdf_filename, "df")
-            df = pd.read_hdf(hdf_filename, "df")
+            df.to_hdf(hdf_filename, key="df")
+            df = pd.read_hdf(hdf_filename, key="df")
         return df
 
     def df_all_feh_interpolated(self, feh):
@@ -320,7 +318,7 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
         """
         hdf_filename = self.get_feh_interpolated_hdf_filename(feh)
         if os.path.exists(hdf_filename):
-            df_interp = pd.read_hdf(hdf_filename, "df")
+            df_interp = pd.read_hdf(hdf_filename, key="df")
         else:
             getLogger().info("Interpolating incomplete tracks for feh = {}".format(feh))
             df = self.df_all_feh(feh)
@@ -383,8 +381,8 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
                     df_interp = pd.concat([df_interp, new_data])
 
             df_interp.sort_index(inplace=True)
-            df_interp.to_hdf(hdf_filename, "df")
-            df_interp = pd.read_hdf(hdf_filename, "df")
+            df_interp.to_hdf(hdf_filename, key="df")
+            df_interp = pd.read_hdf(hdf_filename, key="df")
 
         return df_interp
 
@@ -407,7 +405,7 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
 
         if not compute:
             try:
-                dt_deep = pd.read_hdf(filename, "dt_deep")
+                dt_deep = pd.read_hdf(filename, key="dt_deep")
             except Exception:
                 compute = True
 
@@ -429,8 +427,8 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
                 deriv = np.gradient(log_age, subdf["eep"])
                 subdf.loc[:, "dt_deep"] = deriv
 
-            df.dt_deep.to_hdf(filename, "dt_deep")
-            dt_deep = pd.read_hdf(filename, "dt_deep")
+            df.dt_deep.to_hdf(filename, key="dt_deep")
+            dt_deep = pd.read_hdf(filename, key="dt_deep")
 
         return dt_deep
 
@@ -489,10 +487,10 @@ class MISTEvolutionTrackGrid(MISTModelGrid):
 
         p_dfs = [self.fit_eep_section(a, b, order=o) for (a, b), o in zip(self.eep_sections, orders)]
         for df, (a, b) in zip(p_dfs, self.eep_sections):
-            df.to_hdf(self.eep_param_filename, "eep_{:.0f}_{:.0f}".format(a, b))
+            df.to_hdf(self.eep_param_filename, key="eep_{:.0f}_{:.0f}".format(a, b))
 
         p_approx_df = self.fit_approx_eep()
-        p_approx_df.to_hdf(self.eep_param_filename, "approx")
+        p_approx_df.to_hdf(self.eep_param_filename, key="approx")
 
     def get_eep_interps(self):
         """Get list of interp functions for piecewise polynomial params

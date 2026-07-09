@@ -1,20 +1,28 @@
 """Prior probability distributions for stellar parameter estimation.
 
-This module provides various prior probability distributions used in
-Bayesian stellar model fitting, including:
-- Uniform and flat priors
-- Power law and log-normal priors
-- Gaussian priors
-- Composite priors (e.g., Chabrier IMF)
-- Stellar astrophysics-specific priors (e.g., age, distance, metallicity)
+This module provides prior probability distribution classes for Bayesian
+stellar parameter inference. It includes both simple priors (uniform, normal)
+and astrophysically-motivated priors (Salpeter IMF, metallicity distributions).
+
+Classes:
+    Prior: Base class for prior distributions.
+    FlatPrior: Uniform prior within specified bounds.
+    NormalPrior: Gaussian prior.
+    LogNormalPrior: Log-normal prior.
+    SalpeterIMF: Salpeter initial mass function prior.
+    and others...
 """
+
+from __future__ import print_function, division
+from __future__ import annotations
+
+from typing import Optional, Tuple, Any, Union
 
 import numpy as np
 import pandas as pd
 import scipy.stats
 from scipy.stats import uniform, lognorm
 from scipy.integrate import quad
-from scipy.special import ndtr as _norm_cdf
 
 import matplotlib.pyplot as plt
 import numba as nb
@@ -29,38 +37,62 @@ _norm_pdf_logC = np.log(_norm_pdf_C)
 LOG_ONE_OVER_ROOT_2PI = np.log(ONE_OVER_ROOT_2PI)
 
 
-def _norm_pdf(x):
+def _norm_pdf(x: float) -> float:
+    """Compute unnormalized normal PDF."""
     return np.exp(-(x ** 2) / 2.0) / _norm_pdf_C
 
 
-def _norm_logpdf(x):
+def _norm_logpdf(x: float) -> float:
+    """Compute log of unnormalized normal PDF."""
     return -(x ** 2) / 2.0 - _norm_pdf_logC
 
 
-class Prior(object):
-    """Base class for all prior probability distributions.
+class Prior:
+    """Base class for prior probability distributions.
 
-    This is an abstract base class that defines the interface for all
-    prior distributions used in Bayesian stellar parameter estimation.
+    This class provides a common interface for prior distributions used in
+    Bayesian stellar parameter estimation. Subclasses should implement the
+    _pdf method to define the unnormalized probability density function.
 
-    Attributes
-    ----------
-    bounds : tuple
-        The (lower, upper) bounds of the prior distribution.
+    Attributes:
+        bounds: Tuple of (lower, upper) bounds for the prior support.
     """
 
-    def __init__(self, *args, **kwargs):
-        self._norm = 1.0
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the prior."""
+        self._norm: float = 1.0
+        if not hasattr(self, "_bounds"):
+            self._bounds: Optional[Tuple[float, float]] = None
 
-    def __call__(self, x, **kwargs):
+    def __call__(self, x: float, **kwargs: Any) -> float:
+        """Evaluate the prior probability density.
+
+        Args:
+            x: Value at which to evaluate the PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Probability density at x.
+        """
         return self.pdf(x, **kwargs)
 
     @property
-    def bounds(self):
-        return (-np.inf, np.inf) if getattr(self, "_bounds", None) is None else self._bounds
+    def bounds(self) -> Tuple[float, float]:
+        """The bounds of the prior distribution."""
+        if getattr(self, "_bounds", None) is None:
+            return (-np.inf, np.inf)
+        return self._bounds  # type: ignore[return-value]
 
     @bounds.setter
-    def bounds(self, new):
+    def bounds(self, new: Tuple[float, float]) -> None:
+        """Set the bounds and normalize the prior.
+
+        Args:
+            new: Tuple of (lower, upper) bounds.
+
+        Raises:
+            ValueError: If the integral test fails.
+        """
         self._norm = quad(self._pdf, *new)[0]
         self._bounds = new
         try:
@@ -68,33 +100,81 @@ class Prior(object):
         except AssertionError:
             raise ValueError(f"Problem setting bounds to {new}; integral test failed.")
 
-    def _pdf(self, x, **kwargs):
+    def _pdf(self, x: float, **kwargs: Any) -> float:
+        """Compute the unnormalized probability density.
+
+        This method must be implemented by subclasses.
+
+        Args:
+            x: Value at which to evaluate the PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Unnormalized probability density at x.
+        """
         raise NotImplementedError
 
-    def pdf(self, x, **kwargs):
+    def pdf(self, x: float, **kwargs: Any) -> float:
+        """Compute the normalized probability density.
+
+        Args:
+            x: Value at which to evaluate the PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Normalized probability density at x, or 0 if outside bounds.
+        """
         lo, hi = self.bounds
         if x < lo or x > hi:
             return 0
         else:
             return self._pdf(x, **kwargs) / self._norm
 
-    def lnpdf(self, x, **kwargs):
+    def lnpdf(self, x: float, **kwargs: Any) -> float:
+        """Compute the log probability density.
+
+        Args:
+            x: Value at which to evaluate the log PDF.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Log probability density at x, or -inf if probability is zero.
+        """
         if hasattr(self, "_lnpdf"):
             return self._lnpdf(x, **kwargs)
         else:
             pdf = self(x, **kwargs)
             return np.log(pdf) if pdf else -np.inf
 
-    def sample(self, n):
+    def sample(self, n: int, **kwargs: Any) -> Union[float, np.ndarray]:
+        """Draw samples from the prior distribution.
+
+        Args:
+            n: Number of samples to draw.
+            **kwargs: Additional keyword arguments for sampling.
+
+        Returns:
+            Array of samples, or single sample if n=1.
+
+        Raises:
+            NotImplementedError: If the distribution doesn't have a sampling method.
+        """
         if hasattr(self, "distribution"):
             return self.distribution.rvs(n)
         else:
             raise NotImplementedError
 
-    def test_integral(self):
+    def test_integral(self) -> None:
+        """Test that the prior integrates to 1 within its bounds."""
         assert np.isclose(1, quad(self.pdf, *self.bounds)[0])
 
-    def test_sampling(self, n=100000, plot=False):
+    def test_sampling(self, n: int = 100000, plot: bool = False) -> None:
+        """Test that sampling matches the PDF.
+
+        Args:
+            n: Number of samples to draw. Defaults to 100000.
+            plot: If True, plot the histogram and PDF. Defaults to False.
+        """
         x = self.sample(n)
         if hasattr(self, "bounds"):
             if self.bounds == (-np.inf, np.inf):
@@ -125,17 +205,6 @@ class Prior(object):
 
 
 class BoundedPrior(Prior):
-    """Prior with explicit bounds.
-
-    A prior distribution that has explicit lower and upper bounds,
-    outside of which the probability is zero.
-
-    Parameters
-    ----------
-    bounds : tuple, optional
-        The (lower, upper) bounds of the prior distribution.
-    """
-
     def __init__(self, bounds=None):
         self._bounds = bounds
         super(BoundedPrior, self).__init__()
@@ -172,19 +241,14 @@ class BoundedPrior(Prior):
 
 
 class BrokenPrior(Prior):
-    """Composition of multiple stitched-together priors, with breakpoint(s).
-
-    This prior combines multiple component priors using smooth transitions
-    at specified breakpoints. Useful for combining different physical regimes.
+    """Composition of multiple stitched-together priors, with breakpoint(s)
 
     Parameters
     ----------
-    components : list of Prior objects
-        Components going into prior.
-    breakpoints : array-like
-        List of breakpoints separating components. Length = n(components) - 1.
-    bounds : tuple, optional
-        The (lower, upper) bounds of the prior distribution. Defaults to (-inf, inf).
+    components : list of `Prior` objects
+        Components going into prior
+    breakpoints : array
+        List of breakpoints separating components. Length = n(components) - 1
     """
 
     def __init__(self, components, breakpoints, bounds=None):
@@ -246,7 +310,7 @@ class BrokenPrior(Prior):
         i = np.digitize(x, self.breakpoints)
         return self.components[i].lnpdf(x) - self.lognorms[i]
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         u = np.random.random(n)
 
         x = np.zeros(n)
@@ -269,28 +333,13 @@ class BrokenPrior(Prior):
 
 
 class GaussianPrior(BoundedPrior):
-    """Gaussian (normal) prior distribution with optional bounds.
-
-    A prior that follows a normal distribution, optionally truncated
-    to specified bounds.
-
-    Parameters
-    ----------
-    mean : float
-        Mean of the Gaussian distribution.
-    sigma : float
-        Standard deviation of the Gaussian distribution.
-    bounds : tuple, optional
-        The (lower, upper) bounds for truncation.
-    """
-
     def __init__(self, mean, sigma, bounds=None):
         self.mean = mean
         self.sigma = sigma
         self._bounds = bounds
         self._norm = 1.0
 
-        if bounds is not None:
+        if bounds:
             lo, hi = bounds
             a, b = (lo - mean) / sigma, (hi - mean) / sigma
             self.distribution = scipy.stats.truncnorm(a, b, loc=mean, scale=sigma)
@@ -309,21 +358,6 @@ class GaussianPrior(BoundedPrior):
 
 
 class LogNormalPrior(Prior):
-    """Log-normal prior distribution.
-
-    A prior that follows a log-normal distribution, commonly used
-    for positive-definite parameters like stellar masses.
-
-    Parameters
-    ----------
-    mu : float
-        Mean of the log-normal distribution (in log space).
-    sigma : float
-        Standard deviation of the log-normal distribution (in log space).
-    bounds : tuple, optional
-        The (lower, upper) bounds (defaults to (0, inf)).
-    """
-
     def __init__(self, mu, sigma, bounds=None):
         self.mu = mu
         self.sigma = sigma
@@ -333,7 +367,7 @@ class LogNormalPrior(Prior):
         self.distribution = lognorm(sigma, scale=np.exp(mu))
         self._bounds = (0, np.inf)
 
-        super().__init__()
+        super().__init__(self)
 
     def _pdf(self, x):
         s = self.sigma
@@ -347,16 +381,6 @@ class LogNormalPrior(Prior):
 
 
 class FlatPrior(BoundedPrior):
-    """Uniform (flat) prior distribution within bounds.
-
-    A prior that is uniform (constant) within specified bounds.
-
-    Parameters
-    ----------
-    bounds : tuple
-        The (lower, upper) bounds of the prior distribution.
-    """
-
     def __init__(self, bounds):
         super().__init__(bounds=bounds)
 
@@ -364,23 +388,12 @@ class FlatPrior(BoundedPrior):
         lo, hi = self.bounds
         return 1.0 / (hi - lo)
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         lo, hi = self.bounds
         return np.random.random(n) * (hi - lo) + lo
 
 
 class FlatLogPrior(BoundedPrior):
-    """Uniform prior in log10 space within bounds.
-
-    A prior that is uniform in log10 space, useful for stellar ages
-    which are distributed uniformly in log(age).
-
-    Parameters
-    ----------
-    bounds : tuple
-        The (lower, upper) bounds of the prior distribution (in log10 space).
-    """
-
     def __init__(self, bounds):
         super(FlatLogPrior, self).__init__(bounds=bounds)
 
@@ -388,25 +401,12 @@ class FlatLogPrior(BoundedPrior):
         lo, hi = self.bounds
         return np.log(10) * 10 ** x / (10 ** hi - 10 ** lo)
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         lo, hi = self.bounds
         return np.log10(np.random.random(n) * (10 ** hi - 10 ** lo) + 10 ** lo)
 
 
 class PowerLawPrior(BoundedPrior):
-    """Power law prior distribution.
-
-    A prior that follows a power law distribution: P(x) ∝ x^alpha.
-    Commonly used for the initial mass function (IMF).
-
-    Parameters
-    ----------
-    alpha : float
-        Power law index. The PDF is proportional to x^alpha.
-    bounds : tuple, optional
-        The (lower, upper) bounds of the prior distribution.
-    """
-
     def __init__(self, alpha, bounds=None):
         self.alpha = alpha
         super(PowerLawPrior, self).__init__(bounds=bounds)
@@ -422,14 +422,12 @@ class PowerLawPrior(BoundedPrior):
         C = (1 + self.alpha) / (hi ** (1 + self.alpha) - lo ** (1 + self.alpha))
         return np.log(C) + self.alpha * np.log(x)
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         """
-
         cdf = C * int(x**a)|x=lo..x
-
             = C * [x**(a+1) / (a+1)] | x=lo..x
             = C * ([x**(a+1) / (a+1)] - [lo**(a+1) / (a+1)])
-         u  =
+         u  = 
 
          u/C + [lo**(a+1) / (a+1)] = x**(a+1) / (a+1)
          (a+1) * (u/C + [lo**(a+1) / (a+1)]) = x**(a+1)
@@ -443,22 +441,11 @@ class PowerLawPrior(BoundedPrior):
 
 
 class FehPrior(Prior):
-    """Metallicity ([Fe/H]) prior based on local SDSS distribution.
-
-    A prior for stellar metallicity based on a 2D Gaussian fit from
-    Casagrande (2011), with an optional halo fraction component.
+    """feh PDF based on local SDSS distribution
 
     From Jo Bovy:
     https://github.com/jobovy/apogee/blob/master/apogee/util/__init__.py#L3
-
-    Parameters
-    ----------
-    halo_fraction : float, optional
-        Fraction of stars drawn from the halo population (default: 0.001).
-    local : bool, optional
-        Use local disk distribution if True (default: True).
-    **kwargs
-        Additional keyword arguments passed to the parent class.
+    2D gaussian fit based on Casagrande (2011)
     """
 
     def __init__(self, halo_fraction=0.001, local=True, **kwargs):
@@ -491,7 +478,7 @@ class FehPrior(Prior):
 
         return self.halo_fraction * halo_fehdist + (1 - self.halo_fraction) * disk_fehdist
 
-    def sample(self, n):
+    def sample(self, n, **kwargs):
         if self.local:
             w1, mu1, sig1 = 0.8, 0.016, 0.15
             w2, mu2, sig2 = 0.2, -0.15, 0.22
@@ -518,21 +505,6 @@ class FehPrior(Prior):
 
 
 class EEP_prior(BoundedPrior):
-    """Prior for the Equivalent Evolutionary Phase (EEP).
-
-    A prior on the EEP that accounts for the Jacobian transformation
-    when converting from mass or age priors to EEP space.
-
-    Parameters
-    ----------
-    ic : object
-        The isochrone interpolator object.
-    orig_prior : Prior
-        The original prior (e.g., mass or age prior).
-    bounds : tuple, optional
-        The (lower, upper) bounds of the prior distribution.
-    """
-
     def __init__(self, ic, orig_prior, bounds=None):
         self.ic = ic
         self.orig_prior = orig_prior
@@ -584,15 +556,8 @@ class EEP_prior(BoundedPrior):
         try:
             return eeps.sample(n, weights=weights, replace=True).values
         except ValueError:
-            if not hasattr(self, '_sample_retries'):
-                self._sample_retries = 0
-            self._sample_retries += 1
-            if self._sample_retries > 10:
-                self._sample_retries = 0
-                raise RuntimeError("EEP_prior.sample failed after 10 retries; weights may be all zero.")
-            result = self.sample(n, **kwargs)
-            self._sample_retries = 0
-            return result
+            # If there are no valid samples, just run it again until you get valid results
+            return self.sample(n, **kwargs)
 
     def test_integral(self):
         pass
@@ -614,11 +579,7 @@ def powerlaw_lnpdf(x, alpha, lo, hi):
 
 
 class AgePrior(FlatLogPrior):
-    """Uniform prior on stellar age in log10 space.
-
-    A prior that is uniform in log10(age), with default bounds
-    corresponding to ages from 10^5 to 10^10.15 years (roughly 100,000
-    years to ~14 billion years).
+    """Uniform true age prior, where 'age' is actually log10(age)
     """
 
     def __init__(self, **kwargs):
@@ -626,82 +587,29 @@ class AgePrior(FlatLogPrior):
 
 
 class DistancePrior(PowerLawPrior):
-    """Distance prior based on a power law.
-
-    A prior on stellar distance following a power law with index 2
-    (p(d) proportional to d^2), corresponding to a uniform spatial density.
-
-    Parameters
-    ----------
-    max_distance : float, optional
-        Maximum distance in parsecs (default: 10000).
-    **kwargs
-        Additional keyword arguments passed to the parent class.
-    """
-
     def __init__(self, max_distance=10000, **kwargs):
         super().__init__(alpha=2.0, bounds=(0, max_distance), **kwargs)
 
 
 class AVPrior(FlatPrior):
-    """Prior on the V-band extinction A_V.
-
-    A uniform prior on the V-band extinction, with default bounds
-    of (0, 1) mag.
-    """
-
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0, 1.0))
         super().__init__(bounds=bounds)
 
 
 class QPrior(PowerLawPrior):
-    """Prior on the mass ratio q = M_secondary / M_primary.
-
-    A power law prior on the mass ratio, commonly used for
-    binary star modeling.
-
-    Parameters
-    ----------
-    **kwargs
-        Additional keyword arguments passed to the parent class.
-    """
-
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0.1, 1))
         super().__init__(alpha=0.3, bounds=bounds, **kwargs)
 
 
 class SalpeterPrior(PowerLawPrior):
-    """Salpeter initial mass function (IMF) prior.
-
-    A power law prior with alpha=-2.35, corresponding to the
-    Salpeter (1955) initial mass function.
-
-    Parameters
-    ----------
-    **kwargs
-        Additional keyword arguments passed to the parent class.
-    """
-
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0.1, 10))
         super().__init__(alpha=-2.35, bounds=bounds, **kwargs)
 
 
 class ChabrierPrior(BrokenPrior):
-    """Chabrier (2003) initial mass function (IMF) prior.
-
-    A broken prior combining a log-normal distribution at low masses
-    with a Salpeter power law at high masses. Based on Chabrier 2003,
-    Eqn 17.
-
-    Parameters
-    ----------
-    **kwargs
-        Additional keyword arguments passed to the parent class.
-    """
-
     def __init__(self, **kwargs):
         bounds = kwargs.pop("bounds", (0.1, 100.0))
         super().__init__(

@@ -1,6 +1,7 @@
 import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+from typing import Any, Dict, List, Optional
 
 from .query import EmptyQueryError
 
@@ -10,6 +11,11 @@ class Catalog(object):
     """
 
     _distance_column = "_r"
+    name: str
+    epoch: float
+    bands: Dict[str, Any]
+    id_column: str
+    conversions: Any = {}
 
     def __init__(self, query):
         self.query = query
@@ -17,6 +23,10 @@ class Catalog(object):
         self._query_coords = None
         self._coords = None
         self._empty = False
+
+    def _run_query(self) -> None:
+        """Execute the catalog query. Must be implemented by subclasses."""
+        raise NotImplementedError
 
     def __repr__(self):
         return "{0}({1})".format(type(self), repr(self.query))
