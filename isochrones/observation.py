@@ -655,6 +655,44 @@ class DummyObsNode(ObsNode):
         """Value returns None for dummy node."""
         return None, None
 
+    # A dummy node stands in for "no observation here" (e.g. a
+    # spectroscopy-only star with no photometry).  ObsNode's accessors
+    # guard with `assert self.observation is not None`, which raises
+    # AssertionError; but callers such as StarModel.bands and
+    # StarModel.corner_observed filter these nodes by catching
+    # AttributeError.  Raise AttributeError here to preserve that
+    # contract, matching the pre-`assert` behaviour of
+    # `self.observation.band` on a None observation.
+    @property
+    def instrument(self) -> str:
+        """No instrument for a dummy node."""
+        raise AttributeError("DummyObsNode has no instrument")
+
+    @property
+    def band(self) -> str:
+        """No photometric band for a dummy node."""
+        raise AttributeError("DummyObsNode has no band")
+
+    @property
+    def resolution(self) -> float:
+        """No resolution for a dummy node."""
+        raise AttributeError("DummyObsNode has no resolution")
+
+    @property
+    def relative(self) -> bool:
+        """A dummy node is never a relative measurement."""
+        raise AttributeError("DummyObsNode has no relative flag")
+
+    @property
+    def separation(self) -> float:
+        """No separation for a dummy node."""
+        raise AttributeError("DummyObsNode has no separation")
+
+    @property
+    def pa(self) -> float:
+        """No position angle for a dummy node."""
+        raise AttributeError("DummyObsNode has no position angle")
+
     def lnlike(self, *args: Any, **kwargs: Any) -> float:
         """Log-likelihood is always zero for dummy node."""
         return 0
@@ -954,11 +992,9 @@ class ObservationTree(Node):
         if observations is None:
             observations = []
 
-        if name is None:
-            self.label: str = "root"
-        else:
-            self.label = name
-        self.parent: Optional["Node"] = None
+        # Node.label is a read-only property backed by _label, so the root
+        # label must be set through Node.__init__ rather than assigned.
+        super().__init__("root" if name is None else name)
 
         self._observations: List["Observation"] = []
         self._build_tree()
@@ -1361,7 +1397,7 @@ class ObservationTree(Node):
         i = 0
         for s in self.systems:
             age, feh, dist, AV = p[i + N[s] : i + N[s] + 4]
-            for j in xrange(N[s]):
+            for j in range(N[s]):
                 l = "{}_{}".format(s, j)
                 mass = p[i + j]
                 d[l] = [mass, age, feh, dist, AV]
@@ -1386,7 +1422,7 @@ class ObservationTree(Node):
         N = self.Nstars
         pars = []
         for s in self.systems:
-            for j in xrange(N[s]):
+            for j in range(N[s]):
                 pars.append("eep_{}_{}".format(s, j))
             for p in ["age", "feh", "distance", "AV"]:
                 pars.append("{}_{}".format(p, s))
@@ -1496,7 +1532,14 @@ class ObservationTree(Node):
             except AttributeError:
                 pass
 
-        inds = np.argsort(ds)
+        def _node_depth(n):
+            try:
+                return len(n.get_ancestors())
+            except (AttributeError, TypeError):
+                return -1
+
+        # Sort by distance, breaking ties by preferring deeper nodes
+        inds = sorted(range(len(ds)), key=lambda i: (ds[i], -_node_depth(nodes[i])))
         ds = [ds[i] for i in inds]
         nodes = [nodes[i] for i in inds]
 

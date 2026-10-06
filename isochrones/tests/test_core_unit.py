@@ -859,12 +859,31 @@ class TestGetBands:
         for kw in not_bands:
             assert kw not in bands, f"'{kw}' should not be a band, got bands={bands}"
 
+    @pytest.fixture
+    def star2_ini(self):
+        return os.path.join(os.path.dirname(__file__), "star2", "star.ini")
+
     def test_no_duplicates(self, star1_ini):
         """get_bands should not return duplicate band names."""
         from isochrones.starmodel import StarModel
 
         bands = StarModel.get_bands(star1_ini)
         assert len(bands) == len(set(bands)), f"Duplicate bands found: {bands}"
+
+    def test_untagged_and_tagged_keywords_share_one_band(self, star2_ini):
+        """A companion key like J_1 belongs to band J, not to a band 'J_1'."""
+        from isochrones.starmodel import StarModel
+
+        bands = StarModel.get_bands(star2_ini)
+        for b in ["J", "H", "K", "W1", "W2", "W3"]:
+            assert b in bands, f"Expected band '{b}' in {bands}"
+
+    def test_excludes_companion_metadata(self, star2_ini):
+        """separation/PA keys and tagged band aliases are not bandpasses."""
+        from isochrones.starmodel import StarModel
+
+        bands = StarModel.get_bands(star2_ini)
+        assert sorted(bands) == ["H", "J", "K", "W1", "W2", "W3"], f"got bands={bands}"
 
 
 class TestStarfitWorkflowLogic:

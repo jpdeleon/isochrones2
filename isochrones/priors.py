@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats
 from scipy.stats import uniform, lognorm
+from scipy.special import ndtr as _norm_cdf
 from scipy.integrate import quad
 
 import matplotlib.pyplot as plt
