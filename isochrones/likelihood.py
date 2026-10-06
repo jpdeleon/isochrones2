@@ -33,7 +33,7 @@ def gauss_lnprob(val: float, unc: float, model_val: float) -> float:
         Log-probability.
     """
     resid = val - model_val
-    return LOG_ONE_OVER_ROOT_2PI + log(unc) - 0.5 * resid * resid / (unc * unc)
+    return LOG_ONE_OVER_ROOT_2PI - log(unc) - 0.5 * resid * resid / (unc * unc)
 
 
 @nb.jit(nopython=True)

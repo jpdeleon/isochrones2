@@ -613,7 +613,7 @@ class ObsNode(Node):
         else:
             mod = self.model_mag(model_values, use_cache=use_cache)
 
-        lnl = -0.5 * (mag - mod) ** 2 / dmag ** 2 + LOG_ONE_OVER_ROOT_2PI + np.log(dmag)
+        lnl = -0.5 * (mag - mod) ** 2 / dmag ** 2 + LOG_ONE_OVER_ROOT_2PI - np.log(dmag)
 
         # getLogger().debug('{} {}: mag={}, mod={}, lnlike={}'.format(self.instrument,
         #                                                         self.band,
@@ -1477,7 +1477,7 @@ class ObservationTree(Node):
         for l in self.spectroscopy:
             for prop, (val, err) in self.spectroscopy[l].items():
                 mod = model_values[l][prop]
-                lnl += -0.5 * (val - mod) ** 2 / err ** 2 + LOG_ONE_OVER_ROOT_2PI + np.log(err)
+                lnl += -0.5 * (val - mod) ** 2 / err ** 2 + LOG_ONE_OVER_ROOT_2PI - np.log(err)
             if not np.isfinite(lnl):
                 self._cache_val = -np.inf
                 return -np.inf
@@ -1494,12 +1494,12 @@ class ObservationTree(Node):
         for s, (val, err) in self.parallax.items():
             dist = pardict["{}_0".format(s)][3]
             mod = 1.0 / dist * 1000.0
-            lnl += -0.5 * (val - mod) ** 2 / err ** 2 + LOG_ONE_OVER_ROOT_2PI + np.log(err)
+            lnl += -0.5 * (val - mod) ** 2 / err ** 2 + LOG_ONE_OVER_ROOT_2PI - np.log(err)
 
         # lnlike from AV
         for s, (val, err) in self.AV.items():
             AV = pardict["{}_0".format(s)][4]
-            lnl += -0.5 * (val - AV) ** 2 / err ** 2 + LOG_ONE_OVER_ROOT_2PI + np.log(err)
+            lnl += -0.5 * (val - AV) ** 2 / err ** 2 + LOG_ONE_OVER_ROOT_2PI - np.log(err)
 
         if not np.isfinite(lnl):
             self._cache_val = -np.inf

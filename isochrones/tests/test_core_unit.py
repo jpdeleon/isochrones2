@@ -445,11 +445,12 @@ class TestDFInterpolator:
 class TestGaussLnprob:
     """Tests for gauss_lnprob (Numba-compiled Gaussian log-probability).
 
-    Code formula: LOG_ONE_OVER_ROOT_2PI + log(unc) - 0.5*(val-model_val)²/unc²
+    Code formula: LOG_ONE_OVER_ROOT_2PI - log(unc) - 0.5*(val-model_val)²/unc²
 
-    Note: the +log(unc) (rather than -log(unc)) makes this an un-normalized
-    form often used with a Jeffreys prior on sigma.  The key properties tested
-    here are residual-based, not normalization.
+    This is the normalized Gaussian log-pdf: ``unc`` is a fixed observed
+    uncertainty (never a free parameter), so no prior on ``sigma`` applies and
+    the normalization term must carry a minus sign.  The sign matches
+    ``GaussianPrior._lnpdf`` in ``priors.py``.
     """
 
     def _lnprob(self, val, unc, model_val):
@@ -458,11 +459,11 @@ class TestGaussLnprob:
         return gauss_lnprob(val, unc, model_val)
 
     def test_known_zero_residual(self):
-        """At exact match, lnprob = LOG_ONE_OVER_ROOT_2PI + log(unc)."""
+        """At exact match, lnprob = LOG_ONE_OVER_ROOT_2PI - log(unc)."""
         LOG1OVER_ROOT2PI = math.log(1.0 / math.sqrt(2 * math.pi))
         val, unc = 5700.0, 100.0
         result = self._lnprob(val, unc, val)
-        expected = LOG1OVER_ROOT2PI + math.log(unc)
+        expected = LOG1OVER_ROOT2PI - math.log(unc)
         assert math.isclose(result, expected, rel_tol=1e-10, abs_tol=1e-12)
 
     def test_one_sigma_offset(self):
@@ -470,7 +471,7 @@ class TestGaussLnprob:
         LOG1OVER_ROOT2PI = math.log(1.0 / math.sqrt(2 * math.pi))
         val, unc = 5700.0, 100.0
         result = self._lnprob(val, unc, val + unc)  # 1-sigma off
-        expected = LOG1OVER_ROOT2PI + math.log(unc) - 0.5
+        expected = LOG1OVER_ROOT2PI - math.log(unc) - 0.5
         assert math.isclose(result, expected, rel_tol=1e-10, abs_tol=1e-12)
 
     def test_maximized_at_zero_residual(self):
@@ -503,6 +504,40 @@ class TestGaussLnprob:
         unc = 100.0
         a, b = 5700.0, 5850.0
         assert math.isclose(self._lnprob(a, unc, b), self._lnprob(b, unc, a), rel_tol=1e-12)
+
+    def test_matches_scipy_norm_logpdf(self):
+        """gauss_lnprob must equal the normalized Gaussian log-pdf from scipy."""
+        from scipy.stats import norm
+
+        for val, unc, model_val in [
+            (5700.0, 100.0, 5700.0),
+            (5700.0, 100.0, 5830.0),
+            (5700.0, 7.5, 5711.0),
+        ]:
+            expected = norm.logpdf(model_val, loc=val, scale=unc)
+            assert math.isclose(
+                self._lnprob(val, unc, model_val), expected, rel_tol=1e-12, abs_tol=1e-12
+            )
+
+    def test_integrates_to_unit_probability(self):
+        """exp(lnprob) must integrate to 1 for any unc.
+
+        This is the regression guard for the log(unc) sign: with the sign
+        flipped the integral equals unc**2 instead of 1.
+        """
+        val, unc = 5700.0, 100.0
+        lo, hi = val - 12 * unc, val + 12 * unc
+        integral, _ = quad(lambda x: math.exp(self._lnprob(val, unc, x)), lo, hi, limit=200)
+        assert math.isclose(integral, 1.0, rel_tol=1e-8)
+
+    def test_normalization_shrinks_as_uncertainty_grows(self):
+        """A noisier measurement must not get a larger log-probability at zero residual.
+
+        A sign flip on log(unc) inverts this ordering.
+        """
+        val = 5700.0
+        assert self._lnprob(val, 10.0, val) < self._lnprob(val, 1.0, val)
+        assert self._lnprob(val, 100.0, val) < self._lnprob(val, 10.0, val)
 
 
 # ---------------------------------------------------------------------------
@@ -1103,17 +1138,17 @@ class TestRegressionNumericalValues:
 
         # Perfect match
         result = gauss_lnprob(5700.0, 100.0, 5700.0)
-        expected = LOG1OVER_ROOT2PI + math.log(100.0)
+        expected = LOG1OVER_ROOT2PI - math.log(100.0)
         assert math.isclose(result, expected, abs_tol=1e-10)
 
         # 1-sigma offset
         result2 = gauss_lnprob(5700.0, 100.0, 5800.0)
-        expected2 = LOG1OVER_ROOT2PI + math.log(100.0) - 0.5
+        expected2 = LOG1OVER_ROOT2PI - math.log(100.0) - 0.5
         assert math.isclose(result2, expected2, abs_tol=1e-10)
 
         # 2-sigma offset
         result3 = gauss_lnprob(5700.0, 100.0, 5900.0)
-        expected3 = LOG1OVER_ROOT2PI + math.log(100.0) - 2.0
+        expected3 = LOG1OVER_ROOT2PI - math.log(100.0) - 2.0
         assert math.isclose(result3, expected3, abs_tol=1e-10)
 
     def test_flat_prior_known_values(self):
