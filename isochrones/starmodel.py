@@ -169,7 +169,7 @@ class StarModel(object):
             "distance": DistancePrior(),
             "AV": AVPrior(),
         }
-        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], bounds=eep_bounds)
+        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], mass_prior=self._priors["mass"], bounds=eep_bounds)
 
         self._bounds = {
             k: p.bounds if k not in ["mass", "feh", "age"] else None for k, p in self._priors.items()
@@ -1469,7 +1469,7 @@ class BasicStarModel(StarModel):
             "distance": DistancePrior(),
             "AV": AVPrior(),
         }
-        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], bounds=eep_bounds)
+        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], mass_prior=self._priors["mass"], bounds=eep_bounds)
 
         self._bounds = {
             "mass": None,
@@ -2128,7 +2128,7 @@ class IsoTrackModel(BasicStarModel):
 
         super().__init__(iso, **kwargs)
 
-        self.set_prior(eep=EEP_prior(self.track, self._priors["age"], bounds=self.eep_bounds))
+        self.set_prior(eep=EEP_prior(self.track, self._priors["age"], mass_prior=self._priors["mass"], bounds=self.eep_bounds))
 
     @property
     def ic(self):

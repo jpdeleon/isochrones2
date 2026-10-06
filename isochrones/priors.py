@@ -506,9 +506,21 @@ class FehPrior(Prior):
 
 
 class EEP_prior(BoundedPrior):
-    def __init__(self, ic, orig_prior, bounds=None):
+    """Prior on the EEP sampling index that changes variables with d(EEP) weight.
+
+    The EEP axis replaces either mass (isochrone grids) or age (evolution
+    track grids), so the prior on EEP must carry the corresponding change of
+    variables (dm_deep / dt_deep) times the replacement-variable prior.  For
+    isochrone grids the replacement prior is the IMF itself.  For track grids
+    ``orig_prior`` is the age prior and the IMF enters as an extra
+    multiplicative ``mass_prior`` weight on the (constant along a track)
+    initial mass.
+    """
+
+    def __init__(self, ic, orig_prior, bounds=None, mass_prior=None):
         self.ic = ic
         self.orig_prior = orig_prior
+        self.mass_prior = mass_prior
         self._bounds = bounds if bounds is not None else ic.eep_bounds
         self._norm = 1.0
         self.orig_par = ic.eep_replaces
@@ -525,7 +537,10 @@ class EEP_prior(BoundedPrior):
         elif self.orig_par == "mass":
             pars = [eep, kwargs["age"], kwargs["feh"]]
         orig_val, dx_deep = self.ic.interp_value(pars, [self.orig_par, self.deriv_prop]).squeeze()
-        return self.orig_prior(orig_val) * dx_deep
+        pdf = self.orig_prior(orig_val) * dx_deep
+        if self.orig_par == "age" and self.mass_prior is not None:
+            pdf *= self.mass_prior(kwargs["mass"])
+        return pdf
 
     def sample(self, n, **kwargs):
         eeps = pd.Series(np.arange(self.bounds[0], self.bounds[1])).sample(n, replace=True)
