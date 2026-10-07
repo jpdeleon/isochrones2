@@ -27,3 +27,4 @@ YAPSI and PARSEC models as well.
    starmodel.ipynb
    multiple.ipynb
    populations.ipynb
+   deviations.rst
