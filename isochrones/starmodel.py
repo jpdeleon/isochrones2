@@ -852,7 +852,6 @@ class StarModel(object):
         if "method" not in kwargs:
             kwargs["method"] = "Nelder-Mead"
 
-        p0 = [0.8, 9.5, 0.0, 200, 0.2]
         fit = scipy.optimize.minimize(fn, p0, **kwargs)
         return fit
 
@@ -1678,7 +1677,7 @@ class BasicStarModel(StarModel):
 
             if "delta_nu" in self.kwargs:
                 delta_nu, delta_nu_unc = self.kwargs["delta_nu"]
-                lnlike += gauss_lnprob(delta_nu, delta_nu, model_delta_nu)
+                lnlike += gauss_lnprob(delta_nu, delta_nu_unc, model_delta_nu)
 
         return lnlike
 

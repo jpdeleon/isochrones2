@@ -522,6 +522,12 @@ class EEP_prior(BoundedPrior):
         self.orig_prior = orig_prior
         self.mass_prior = mass_prior
         self._bounds = bounds if bounds is not None else ic.eep_bounds
+        # Deliberately 1.0: this prior is NOT normalized.  BoundedPrior.pdf
+        # divides by ``_norm``, so it must exist, but a single constant
+        # cannot normalize a pdf that depends on the conditioning
+        # (age, feh) / (mass, feh).  The missing factor is not constant in
+        # those parameters, so treat lnprior as unnormalized (fine for MCMC at
+        # fixed data; do not compare absolute values across models).
         self._norm = 1.0
         self.orig_par = ic.eep_replaces
         if self.orig_par == "age":
