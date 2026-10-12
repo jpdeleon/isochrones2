@@ -424,15 +424,18 @@ class PowerLawPrior(BoundedPrior):
         return np.log(C) + self.alpha * np.log(x)
 
     def sample(self, n, **kwargs):
-        """
-        cdf = C * int(x**a)|x=lo..x
-            = C * [x**(a+1) / (a+1)] | x=lo..x
-            = C * ([x**(a+1) / (a+1)] - [lo**(a+1) / (a+1)])
-         u  = 
+        """Draw samples by inverting the CDF.
 
-         u/C + [lo**(a+1) / (a+1)] = x**(a+1) / (a+1)
-         (a+1) * (u/C + [lo**(a+1) / (a+1)]) = x**(a+1)
-         [(a+1) * (u/C + [lo**(a+1) / (a+1)])] ** (1/(a+1)) = x
+        Derivation::
+
+            cdf = C * int(x**a)|x=lo..x
+                = C * [x**(a+1) / (a+1)] | x=lo..x
+                = C * ([x**(a+1) / (a+1)] - [lo**(a+1) / (a+1)])
+             u  =
+
+             u/C + [lo**(a+1) / (a+1)] = x**(a+1) / (a+1)
+             (a+1) * (u/C + [lo**(a+1) / (a+1)]) = x**(a+1)
+             [(a+1) * (u/C + [lo**(a+1) / (a+1)])] ** (1/(a+1)) = x
         """
         lo, hi = self.bounds
         C = (1 + self.alpha) / (hi ** (1 + self.alpha) - lo ** (1 + self.alpha))

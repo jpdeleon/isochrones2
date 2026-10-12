@@ -79,7 +79,7 @@ class StarModel(object):
         :class:`ObservationTree`.  If you want to model a binary star,
         provide ``N=2``.
 
-    :param **kwargs:
+    :param \*\*kwargs:
         Keyword arguments must be properties of given isochrone, e.g., logg,
         feh, Teff, and/or magnitudes.  The values represent measurements of
         the star, and must be in (value,error) format. All such keyword
@@ -760,7 +760,7 @@ class StarModel(object):
             delete the MultiNest files associated with the
             given basename and start over.
 
-        :param **kwargs:
+        :param \*\*kwargs:
             Additional keyword arguments will be passed to
             :func:`pymultinest.run`.
 
@@ -953,7 +953,7 @@ class StarModel(object):
             Any arguments to pass to :func:`StarModel.loglike`, such
             as what priors to use.
 
-        :param **kwargs:
+        :param \*\*kwargs:
             Additional keyword arguments passed to :class:`emcee.EnsembleSampler`
             constructor.
 
