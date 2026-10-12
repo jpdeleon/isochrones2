@@ -89,3 +89,21 @@ def test_get_quantiles_includes_mode_cci_mci(monkeypatch, tmp_path):
 
 def test_get_quantiles_missing_file_returns_empty(tmp_path):
     assert get_quantiles("nope", rootdir=str(tmp_path)).empty
+
+def test_summary_statistics_ignores_nan_like_pandas_quantile():
+    rng = np.random.default_rng(13)
+    x = rng.normal(0, 1, 2000)
+    with_nan = np.concatenate([x, [np.nan, np.nan, np.nan]])
+    s = summary_statistics(with_nan)
+    ref = summary_statistics(x)
+    assert all(np.isfinite(list(s.values())))
+    for q in [0.05, 0.16, 0.5, 0.84, 0.95]:
+        key = "{:02.0f}".format(q * 100)
+        assert np.isclose(s[key], pd.Series(with_nan).quantile(q), rtol=1e-12)
+    assert s == ref
+
+
+def test_summary_statistics_all_nan_returns_nan():
+    s = summary_statistics(np.array([np.nan, np.nan]))
+    assert set(s) == set(summary_statistics(np.arange(100.0)))
+    assert all(np.isnan(v) for v in s.values())

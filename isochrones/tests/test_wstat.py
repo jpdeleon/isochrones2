@@ -94,3 +94,14 @@ def test_empty_raises():
         log_w([], [])
     with pytest.raises(ValueError):
         log_w_poisson([], [])
+
+def test_log_w_poisson_zero_total_counts_is_finite():
+    # M = 0 (or S = 0): the 0*log(0) terms are 0 in the limit, not NaN.
+    with_zero_model = log_w_poisson([0, 0], [1, 2])
+    expected = -3.0 + 3.0 * math.log(3.0) + math.lgamma(2) - math.lgamma(3 + 2)
+    expected += math.lgamma(2) - math.lgamma(1) - math.lgamma(2)  # bin 0: (0+1)!/(0!1!)
+    expected += math.lgamma(3) - math.lgamma(1) - math.lgamma(3)  # bin 1: (0+2)!/(0!2!)
+    assert np.isfinite(with_zero_model)
+    assert np.isclose(with_zero_model, expected, rtol=1e-12)
+    assert np.isfinite(log_w_poisson([1, 2], [0, 0]))
+    assert np.isclose(log_w_poisson([0, 0], [0, 0]), math.lgamma(2) - math.lgamma(2), atol=1e-12)

@@ -110,6 +110,13 @@ def summary_statistics(x: np.ndarray, qs: Optional[List[float]] = None, alpha: f
         qs = [0.05, 0.16, 0.5, 0.84, 0.95]
     pct = "{:02d}".format(int(round(alpha * 100)))
     stats: Dict[str, float] = {}
+    # Drop non-finite samples, as pandas' Series.quantile did previously.
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    if x.size == 0:
+        keys = ["{:02.0f}".format(q * 100) for q in qs]
+        keys += ["mode"] + [k + pct for k in ("cci_lo_", "cci_hi_", "mci_lo_", "mci_hi_")]
+        return {k: float("nan") for k in keys}
     for q in qs:
         stats["{:02.0f}".format(q * 100)] = float(np.quantile(x, q))
     stats["mode"] = mode_of_samples(x)
