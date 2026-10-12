@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_grid_tests:
+        description: "Also run the tests that need the MIST model grids (large download)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MPLBACKEND: Agg
+  NUMEXPR_MAX_THREADS: "4"
+
+jobs:
+  unit:
+    name: Unit tests (no model grids)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      # These four modules build real MIST interpolators and would trigger the
+      # multi-hundred-MB grid download; they run in the `grids` job instead.
+      - name: Test
+        env:
+          # Empty data dir plus a dead proxy turn an accidental grid download
+          # into a fast failure instead of a hung job.
+          ISOCHRONES: ${{ runner.temp }}/isochrones-empty
+          https_proxy: http://127.0.0.1:9
+          http_proxy: http://127.0.0.1:9
+        run: |
+          python -m pytest -p no:cacheprovider \
+            --ignore=isochrones/tests/test_basic.py \
+            --ignore=isochrones/tests/test_ini.py \
+            --ignore=isochrones/tests/test_likelihood.py \
+            --ignore=isochrones/tests/test_populations.py \
+            --ignore=isochrones/tests/test_ultranest.py
+
+  grids:
+    name: Full suite (MIST grids)
+    # Opt-in: the grid download is large. Trigger via "Run workflow".
+    if: github.event_name == 'workflow_dispatch' && inputs.run_grid_tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Cache MIST grids
+        uses: actions/cache@v4
+        with:
+          path: ~/.isochrones
+          key: isochrones-grids-${{ runner.os }}-v1
+
+      - name: Test
+        run: |
+          # test_AV scrapes the NED web service and is not reliable in CI.
+          python -m pytest -p no:cacheprovider \
+            --deselect isochrones/tests/test_basic.py::test_AV \
+            --ignore=isochrones/tests/test_ultranest.py
