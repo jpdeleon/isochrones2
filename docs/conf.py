@@ -33,6 +33,7 @@ import subprocess
 extensions = [
     'nbsphinx',
     'sphinx.ext.autodoc',
+    'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
@@ -40,17 +41,10 @@ extensions = [
 
 nbsphinx_execute = 'never'
 
-autodoc_mock_imports = [
-    'numpy',
-    'pandas',
-    'scipy',
-    'emcee',
-    'corner',
-    'astropy',
-    'tables',
-    'tqdm',
-    'numba',
-]
+# The docs build installs the package and its dependencies for real
+# (pip install -e . ; see docs/requirements.txt), so nothing is mocked:
+# mocking numpy/pandas breaks classes that subclass or decorate with them.
+autodoc_mock_imports = []
 
 # Get the version of isochrones
 this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -82,7 +76,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'isochrones'
-copyright = u'2019, Timothy Morton'
+copyright = u'2019, Timothy Morton; 2024-2026, isochrones2 contributors'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
