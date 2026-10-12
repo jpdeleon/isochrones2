@@ -24,6 +24,7 @@ if not on_rtd:
     try:
         import pymultinest
     except ImportError:
+        pymultinest = None
         logger.warning("PyMultiNest not imported.  MultiNest fits will not work.")
 
     import configobj
@@ -168,7 +169,7 @@ class StarModel(object):
             "distance": DistancePrior(),
             "AV": AVPrior(),
         }
-        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], bounds=eep_bounds)
+        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], mass_prior=self._priors["mass"], bounds=eep_bounds)
 
         self._bounds = {
             k: p.bounds if k not in ["mass", "feh", "age"] else None for k, p in self._priors.items()
@@ -216,12 +217,12 @@ class StarModel(object):
     def _parse_band(cls, kw):
         """Returns photometric band from inifile keyword
         """
-        m = re.search(r"[a-zA-Z0-9_]+", kw)
+        m = re.search(r"([a-zA-Z0-9]+)(_\d+)?", kw)
         if m:
-            if m.group(0) in cls._not_a_band:
+            if m.group(1) in cls._not_a_band:
                 return None
             else:
-                return m.group(0)
+                return m.group(1)
 
     @classmethod
     def get_bands(cls, inifile):
@@ -349,7 +350,11 @@ class StarModel(object):
 
                     # Overwrite value of 'relative' if it is explicitly set
                     if "relative" in c[k]:
-                        relative = c[k]["relative"] == "True"
+                        rel_val = c[k]["relative"]
+                        if isinstance(rel_val, bool):
+                            relative = rel_val
+                        else:
+                            relative = rel_val.lower() in ("true", "1", "yes")
 
                     # Check if there are multiple stars (defined by whether
                     # any separations are listed).
@@ -379,7 +384,8 @@ class StarModel(object):
                                 bands.append(b)
 
                     # If a blank tags needs to be created, do so
-                    if len(bands) > 0 and (len(tags) == 0 or bands[0] in c[k]):
+                    # Only add blank tag if there are no tagged separations
+                    if len(bands) > 0 and len(tags) == 0:
                         tags.append("")
 
                     # For each band and each star, create a row
@@ -760,6 +766,12 @@ class StarModel(object):
 
         """
 
+        if pymultinest is None:
+            raise ImportError(
+                "PyMultiNest is required for fit_multinest() but is not installed. "
+                "Install it, or call fit_mcmc() to use emcee instead."
+            )
+
         try:
             from mpi4py import MPI
 
@@ -816,6 +828,10 @@ class StarModel(object):
 
         See PyMultiNest documentation for more.
         """
+        if pymultinest is None:
+            raise ImportError(
+                "PyMultiNest is required for mnest_analyzer but is not installed."
+            )
         return pymultinest.Analyzer(self.n_params, self.mnest_basename)
 
     @property
@@ -836,7 +852,6 @@ class StarModel(object):
         if "method" not in kwargs:
             kwargs["method"] = "Nelder-Mead"
 
-        p0 = [0.8, 9.5, 0.0, 200, 0.2]
         fit = scipy.optimize.minimize(fn, p0, **kwargs)
         return fit
 
@@ -957,12 +972,13 @@ class StarModel(object):
             logger.debug("Generating initial p0 for {} walkers...".format(nwalkers))
             p0 = self.emcee_p0(nwalkers)
             if initial_burn:
-                sampler = emcee.EnsembleSampler(nwalkers, npars, self.lnpost, **kwargs)
+                sampler_kwargs = {k: v for k, v in kwargs.items() if k not in ("verbose", "overwrite")}
+                sampler = emcee.EnsembleSampler(nwalkers, npars, self.lnpost, **sampler_kwargs)
                 # ninitial = 300 #should this be parameter?
                 pos, prob, state = sampler.run_mcmc(p0, ninitial)
 
                 # Choose walker with highest final lnprob to seed new one
-                i, j = np.unravel_index(sampler.lnprobability.argmax(), sampler.shape)
+                i, j = np.unravel_index(sampler.lnprobability.argmax(), sampler.lnprobability.shape)
                 p0_best = sampler.chain[i, j, :]
                 logger.debug("After initial burn, p0={}".format(p0_best))
                 p0 = p0_best * (1 + rand.normal(size=p0.shape) * 0.001)
@@ -1452,7 +1468,7 @@ class BasicStarModel(StarModel):
             "distance": DistancePrior(),
             "AV": AVPrior(),
         }
-        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], bounds=eep_bounds)
+        self._priors["eep"] = EEP_prior(self.ic, self._priors[self.ic.eep_replaces], mass_prior=self._priors["mass"], bounds=eep_bounds)
 
         self._bounds = {
             "mass": None,
@@ -1661,7 +1677,7 @@ class BasicStarModel(StarModel):
 
             if "delta_nu" in self.kwargs:
                 delta_nu, delta_nu_unc = self.kwargs["delta_nu"]
-                lnlike += gauss_lnprob(delta_nu, delta_nu, model_delta_nu)
+                lnlike += gauss_lnprob(delta_nu, delta_nu_unc, model_delta_nu)
 
         return lnlike
 
@@ -2111,7 +2127,7 @@ class IsoTrackModel(BasicStarModel):
 
         super().__init__(iso, **kwargs)
 
-        self.set_prior(eep=EEP_prior(self.track, self._priors["age"], bounds=self.eep_bounds))
+        self.set_prior(eep=EEP_prior(self.track, self._priors["age"], mass_prior=self._priors["mass"], bounds=self.eep_bounds))
 
     @property
     def ic(self):

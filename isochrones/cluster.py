@@ -426,10 +426,10 @@ class StarClusterModel(StarModel):
 
         # Compute the log-likelihood of the (non-mag) props
         #  This needs to be added (appropriately) to lnlike_photmass
-        #  As computed here, lnlike_prop is shape Neep x Nstars
+        #  As computed here, lnlike_prop is shape Nstars x Neep
 
         Nstars = len(self.stars.df)
-        lnlike_prop = np.zeros((len(eeps), Nstars))
+        lnlike_prop = np.zeros((Nstars, len(eeps)))
         for p, (vals, uncs) in self.stars.iter_props(values=True):
             if p == "parallax":
                 plax = 1000.0 / distance
@@ -438,7 +438,7 @@ class StarClusterModel(StarModel):
                 model_fn = getattr(self.ic, p)
                 model_vals = model_fn(eeps, age, feh)
 
-            lnlike_prop += -0.5 * (vals - model_vals[:, None]) ** 2 / uncs ** 2
+            lnlike_prop += -0.5 * (vals[:, None] - model_vals[None, :]) ** 2 / uncs[:, None] ** 2
 
         # Create lnlike grid.  This will be a Nstars x Neep x Neep array.
 

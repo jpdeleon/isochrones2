@@ -365,11 +365,7 @@ class ModelGridInterpolator(object):
         return self.grid_type.name  # type: ignore
 
     @property
-<<<<<<< HEAD
-    def eep_replaces(self):
-=======
     def eep_replaces(self) -> str:
->>>>>>> update
         return self.model_grid.eep_replaces
 
     @property
