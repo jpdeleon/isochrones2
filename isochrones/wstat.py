@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Sequence
 
 import numpy as np
-from scipy.special import gammaln
+from scipy.special import gammaln, xlogy
 
 
 def log_w(m: Sequence[float], s: Sequence[float]) -> float:
@@ -81,7 +81,8 @@ def log_w_poisson(m: Sequence[float], s: Sequence[float]) -> float:
     B = float(m_arr.size)
     M, S = float(m_arr.sum()), float(s_arr.sum())
     fixed_totals = np.sum(gammaln(m_arr + s_arr + 1.0) - gammaln(m_arr + 1.0) - gammaln(s_arr + 1.0))
-    poisson = -M + M * np.log(M) - S + S * np.log(S) + gammaln(B) - gammaln(M + S + B)
+    # xlogy(x, x) is x*log(x) with the x -> 0 limit of 0 (no NaN for empty totals).
+    poisson = -M + xlogy(M, M) - S + xlogy(S, S) + gammaln(B) - gammaln(M + S + B)
     return float(fixed_totals + poisson)
 
 
