@@ -228,13 +228,15 @@ def test_calc_lnlike_grid_single_star_cells_closed_form():
     # Cell (j=1, k=0): single model mag 11.0 against observed 10.0.
     phot = -0.5 * (11.0 - 10.0) ** 2 / 0.05**2
     mass = _powerlaw_lnpdf_closed_form(1.0, alpha, mass_lo, mass_hi)
-    q = _powerlaw_lnpdf_closed_form(0.8, gamma, q_lo, 1.0)
+    # The mass-ratio density is per unit EEP_k: times (dm_k/dEEP_k) / m_j,
+    # with ln dm/dEEP = 0 here.
+    q = _powerlaw_lnpdf_closed_form(0.8, gamma, q_lo, 1.0) - math.log(1.0)
     assert np.isclose(grid[0, 1, 0], phot + mass + q, rtol=1e-12)
 
     # Cell (j=0, k=0): single model mag 10.0, perfect match.
     phot0 = -0.5 * (10.0 - 10.0) ** 2 / 0.05**2
     mass0 = _powerlaw_lnpdf_closed_form(0.8, alpha, mass_lo, mass_hi)
-    q0 = _powerlaw_lnpdf_closed_form(1.0, gamma, q_lo, 1.0)
+    q0 = _powerlaw_lnpdf_closed_form(1.0, gamma, q_lo, 1.0) - math.log(0.8)
     assert np.isclose(grid[0, 0, 0], phot0 + mass0 + q0, rtol=1e-12)
 
 
