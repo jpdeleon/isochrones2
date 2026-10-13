@@ -5,6 +5,9 @@ log-likelihood of stellar models given observational data.
 
 Functions:
     gauss_lnprob: Gaussian log-probability for a single observation.
+    bivariate_gauss_lnprob: Correlated bivariate Gaussian log-probability.
+    correlation_correction: Change in a pair of independent Gaussian terms
+        when the observables are correlated.
     star_lnlike: Total log-likelihood for stellar model fitting.
 """
 
@@ -15,6 +18,8 @@ from .utils import fast_addmags
 import numba as nb
 from math import pi, log, sqrt
 from typing import Any
+
+import numpy as np
 
 
 LOG_ONE_OVER_ROOT_2PI = log(1.0 / sqrt(2 * pi))
@@ -34,6 +39,72 @@ def gauss_lnprob(val: float, unc: float, model_val: float) -> float:
     """
     resid = val - model_val
     return LOG_ONE_OVER_ROOT_2PI - log(unc) - 0.5 * resid * resid / (unc * unc)
+
+
+def _check_rho(rho: float) -> None:
+    if not -1.0 < rho < 1.0:
+        raise ValueError("correlation coefficient must satisfy -1 < rho < 1, got {}".format(rho))
+
+
+def bivariate_gauss_lnprob(
+    val_a: float,
+    unc_a: float,
+    model_a: float,
+    val_b: float,
+    unc_b: float,
+    model_b: float,
+    rho: float,
+) -> float:
+    """Log of the correlated bivariate Gaussian (Valls-Gabaud 2016, Eq. 14).
+
+    With ``D = (value - model) / sigma`` for each observable,
+
+        ln L = -[D_a^2 + D_b^2 - 2 rho D_a D_b] / [2 (1 - rho^2)]
+               - ln(2 pi sigma_a sigma_b sqrt(1 - rho^2))
+
+    Args:
+        val_a, unc_a, model_a: Observed value, 1-sigma uncertainty and model
+            value of the first observable.
+        val_b, unc_b, model_b: Same for the second observable.
+        rho: Correlation coefficient, ``cov(a, b) = rho sigma_a sigma_b``.
+
+    Returns:
+        Log-probability.
+
+    Raises:
+        ValueError: If ``rho`` is not strictly between -1 and 1.
+    """
+    _check_rho(rho)
+    da = (val_a - model_a) / unc_a
+    db = (val_b - model_b) / unc_b
+    quad = (da * da + db * db - 2.0 * rho * da * db) / (2.0 * (1.0 - rho * rho))
+    return float(-quad - log(2.0 * pi * unc_a * unc_b * sqrt(1.0 - rho * rho)))
+
+
+def correlation_correction(scaled_resid_a: Any, scaled_resid_b: Any, rho: float) -> Any:
+    """Additive change to ``-0.5 (D_a^2 + D_b^2)`` when ``rho != 0``.
+
+    Add this to a log-likelihood that already contains the independent terms
+    ``-0.5 D_a^2 - 0.5 D_b^2`` to make it the exponent of Eq. 14.  The
+    normalisation ``sqrt(1 - rho^2)`` is constant for fixed ``rho`` and is
+    left out, like the other constants in the cluster likelihood.
+
+    Args:
+        scaled_resid_a: ``(value - model) / sigma`` of the first observable.
+        scaled_resid_b: Same for the second (broadcastable against the first).
+        rho: Correlation coefficient.
+
+    Returns:
+        Array (or float) shaped like the broadcast residuals.
+
+    Raises:
+        ValueError: If ``rho`` is not strictly between -1 and 1.
+    """
+    _check_rho(rho)
+    da = np.asarray(scaled_resid_a, dtype=float)
+    db = np.asarray(scaled_resid_b, dtype=float)
+    corr = -(da * da + db * db - 2.0 * rho * da * db) / (2.0 * (1.0 - rho * rho))
+    return corr + 0.5 * (da * da + db * db)
 
 
 @nb.jit(nopython=True)

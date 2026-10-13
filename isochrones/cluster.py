@@ -26,6 +26,7 @@ from .catalog import StarCatalog
 from .priors import PowerLawPrior, FlatLogPrior, FehPrior, FlatPrior, GaussianPrior
 from .utils import addmags, band_pairs
 from .cluster_utils import calc_lnlike_grid, integrate_over_eeps
+from .likelihood import correlation_correction
 from .logger import getLogger
 
 
@@ -307,6 +308,7 @@ class StarClusterModel(StarModel):
         eep_bounds=None,
         mass_bounds=None,
         minq=0.1,
+        correlations=None,
         **kwargs
     ):
         self._ic = ic
@@ -327,6 +329,18 @@ class StarClusterModel(StarModel):
         }
 
         self.use_emcee = use_emcee
+
+        # Correlation coefficients (Eq. 14) between pairs of non-photometric
+        # properties, e.g. {("Teff", "logg"): 0.4}.
+        self.correlations = dict(correlations or {})
+        for (a, b), rho in self.correlations.items():
+            for name in (a, b):
+                if name not in self.stars.props:
+                    raise ValueError("correlated property {!r} is not in the catalog props".format(name))
+            if a == b:
+                raise ValueError("cannot correlate {!r} with itself".format(a))
+            if not -1.0 < rho < 1.0:
+                raise ValueError("correlation for {} must satisfy -1 < rho < 1".format((a, b)))
 
         self._eep_bounds = eep_bounds
         self._mass_bounds = mass_bounds
@@ -430,6 +444,7 @@ class StarClusterModel(StarModel):
 
         Nstars = len(self.stars.df)
         lnlike_prop = np.zeros((Nstars, len(eeps)))
+        scaled_resid = {}
         for p, (vals, uncs) in self.stars.iter_props(values=True):
             if p == "parallax":
                 plax = 1000.0 / distance
@@ -438,7 +453,11 @@ class StarClusterModel(StarModel):
                 model_fn = getattr(self.ic, p)
                 model_vals = model_fn(eeps, age, feh)
 
-            lnlike_prop += -0.5 * (vals[:, None] - model_vals[None, :]) ** 2 / uncs[:, None] ** 2
+            scaled_resid[p] = (vals[:, None] - model_vals[None, :]) / uncs[:, None]
+            lnlike_prop += -0.5 * scaled_resid[p] ** 2
+
+        for (a, b), rho in self.correlations.items():
+            lnlike_prop += correlation_correction(scaled_resid[a], scaled_resid[b], rho)
 
         # Create lnlike grid.  This will be a Nstars x Neep x Neep array.
 

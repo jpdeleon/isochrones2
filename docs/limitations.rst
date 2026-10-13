@@ -39,10 +39,11 @@ Goodness of fit is only partly provided
     model and observed CMDs, and comparing :math:`W` for simulated and real
     data, are left to the caller.
 
-No correlated uncertainties
-    All Gaussian likelihood terms are independent per band or property; the
-    paper's correlation coefficient between observables (Eq. 14) is not
-    available.
+Correlations only between properties
+    ``StarClusterModel(correlations={("Teff", "logg"): rho})`` applies the
+    paper's Eq. 14 to pairs of non-photometric properties.  Correlations
+    between photometric bands, and in ``StarModel`` / ``BasicStarModel``, are
+    not available: those terms stay independent per band.
 
 Binary branch ignores the binary for spectroscopic properties
     In the cluster likelihood, properties such as ``Teff`` are compared with
