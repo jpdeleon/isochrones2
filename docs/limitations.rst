@@ -49,11 +49,15 @@ Binary branch ignores the binary for spectroscopic properties
     the primary's model value in both branches; the paper combines the
     luminosity and effective temperature of the unresolved system.
 
-Coevality is imposed
+Coevality is imposed in the samplers
     Components of a multiple system, and members of a cluster, share age,
-    metallicity, distance and extinction.  Independent per-component ages
-    (paper Sec. 4 and Figs. 6-8), and coevality as a testable hypothesis, are
-    not available.  See :doc:`deviations`.
+    metallicity, distance and extinction inside ``StarModel`` and
+    ``StarClusterModel``.  For a detached binary, fit each component as a
+    single star and combine the age samples with ``isochrones.coevality``
+    (paper Sec. 4 and Figs. 6-8): the age-difference summary tests coevality
+    and ``coeval_age_posterior`` imposes it.  Independent ages inside one
+    joint fit, and per-star ages for cluster members, are not available.
+    See :doc:`deviations`.
 
 Evolution-track grids
     ``EEP_prior`` carries the IMF weight for track grids, but

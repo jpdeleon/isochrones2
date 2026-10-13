@@ -41,6 +41,12 @@ Goodness of fit
 .. automodule:: isochrones.wstat
    :members: log_w, log_w_poisson
 
+Coevality of detached binaries
+------------------------------
+
+.. automodule:: isochrones.coevality
+   :members: coeval_age_posterior, age_difference_samples, coevality_summary
+
 Priors
 ------
 
