@@ -417,6 +417,8 @@ class StarClusterModel(StarModel):
 
         model_masses = model_masses[ok]
         eeps = eeps[ok]
+        if len(eeps) == 0:
+            return -np.inf
         dm_deeps = self.ic.interp_value([eeps, age, feh], ["dm_deep"])
         ln_dm_deeps = np.log(np.absolute(dm_deeps))
 
@@ -452,7 +454,14 @@ class StarClusterModel(StarModel):
         # mag_uncs: (Nstars, Nbands)
 
         # This takes the lnlike_prop and adds likelihoods from photometry and mass
-        mass_lo, mass_hi = self.bounds("mass")
+        # Normalise the IMF over the mass range of this isochrone,
+        #  K = int_{m_lim}^{m_top} rho(m) dm  (Valls-Gabaud 2016, Eq. 18-19),
+        #  not over the grid-wide mass bounds.
+        bound_lo, bound_hi = self.bounds("mass")
+        mass_lo = max(model_masses.min(), bound_lo)
+        mass_hi = min(model_masses.max(), bound_hi)
+        if not mass_hi > mass_lo:
+            return -np.inf
         Neep = len(eeps)
         Nbands = len(self.stars.bands)
         # model_mags_arr = np.empty((Neep, Nbands), dtype=float)

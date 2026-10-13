@@ -13,7 +13,6 @@ from unittest import mock
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from isochrones import cluster
 from isochrones.cluster import StarClusterModel
@@ -58,10 +57,6 @@ def _model():
     return StarClusterModel(TurnoffIC(), df, props=[], eep_bounds=(MINEEP, MAXEEP))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="P10 (#1): IMF normalised over grid-wide mass bounds, not [m_lim, m_top] of the isochrone",
-)
 def test_imf_is_normalised_over_the_isochrone_mass_range():
     model = _model()
     captured = {}
@@ -80,3 +75,41 @@ def test_imf_is_normalised_over_the_isochrone_mass_range():
 
     assert np.isclose(captured["mass_lo"], finite.min())
     assert np.isclose(captured["mass_hi"], finite.max())
+
+
+def _spy_mass_bounds(model):
+    captured = {}
+    real = cluster.calc_lnlike_grid
+
+    def spy(*args):
+        captured["mass_lo"], captured["mass_hi"] = args[11], args[12]
+        return real(*args)
+
+    with mock.patch.object(cluster, "calc_lnlike_grid", spy):
+        model.lnlike([9.0, 0.0, 100.0, 0.1, -2.3, 0.3, 0.3])
+    return captured
+
+
+def test_explicit_mass_bounds_are_intersected_with_the_isochrone_range():
+    model = _model()
+    model._mass_bounds = (0.85, 50.0)
+
+    captured = _spy_mass_bounds(model)
+
+    assert np.isclose(captured["mass_lo"], 0.85)
+    assert np.isclose(captured["mass_hi"], 1.0)
+
+
+def test_isochrone_with_no_valid_eep_has_zero_likelihood():
+    class EmptyIC(TurnoffIC):
+        def initial_mass(self, eeps, age, feh):
+            return np.full(len(np.atleast_1d(eeps)), np.nan)
+
+    model = StarClusterModel(
+        EmptyIC(),
+        _model().stars.df,
+        props=[],
+        eep_bounds=(MINEEP, MAXEEP),
+    )
+
+    assert model.lnlike([9.0, 0.0, 100.0, 0.1, -2.3, 0.3, 0.3]) == -np.inf
