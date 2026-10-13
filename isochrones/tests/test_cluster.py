@@ -18,7 +18,12 @@ import numpy as np
 import pandas as pd
 
 from isochrones.cluster import StarClusterModel
-from isochrones.cluster_utils import calc_lnlike_grid, integrate_over_eeps
+from isochrones.cluster_utils import (
+    add_binary_property_term,
+    binary_teff,
+    calc_lnlike_grid,
+    integrate_over_eeps,
+)
 
 MINEEP, MAXEEP = 300, 304
 EEPS = np.arange(MINEEP, MAXEEP + 1)
@@ -53,6 +58,9 @@ class FakeIC:
 
     def Teff(self, eeps, age, feh):
         return 5700.0 + 10.0 * (np.asarray(eeps) - MINEEP)
+
+    def radius(self, eeps, age, feh):
+        return 0.9 + 0.05 * (np.asarray(eeps) - MINEEP)
 
 
 def _make_model():
@@ -105,9 +113,14 @@ def test_lnlike_prop_layout_is_nstars_by_neep():
 
     # The contract under test: (Nstars, Neep), with star as the slow axis.
     lnlike_prop = np.zeros((Nstars, len(eeps)))
+    # Teff is the one binary-aware property (P12): handled after the grid.
+    sgl = bin_ = None
     for prop, (vals, uncs) in model.stars.iter_props(values=True):
         model_vals = getattr(model.ic, prop)(eeps, age, feh)
-        lnlike_prop += -0.5 * (vals[:, None] - model_vals[None, :]) ** 2 / uncs[:, None] ** 2
+        assert prop == "Teff"
+        sgl = -0.5 * (vals[:, None] - model_vals[None, :]) ** 2 / uncs[:, None] ** 2
+        pair = binary_teff(model_vals, model.ic.radius(eeps, age, feh))
+        bin_ = -0.5 * (vals[:, None, None] - pair[None]) ** 2 / uncs[:, None, None] ** 2
 
     vals_arr = np.empty((Nstars, Nbands))
     uncs_arr = np.empty((Nstars, Nbands))
@@ -132,6 +145,7 @@ def test_lnlike_prop_layout_is_nstars_by_neep():
         mass_hi,
         model.minq,
     )
+    grid = add_binary_property_term(grid, sgl, bin_, fB)
     ref = np.log(integrate_over_eeps(grid, eeps, Nstars)).sum()
 
     assert np.isfinite(ref)

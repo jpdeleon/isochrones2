@@ -44,10 +44,12 @@ No correlated uncertainties
     paper's correlation coefficient between observables (Eq. 14) is not
     available.
 
-Binary branch ignores the binary for spectroscopic properties
-    In the cluster likelihood, properties such as ``Teff`` are compared with
-    the primary's model value in both branches; the paper combines the
-    luminosity and effective temperature of the unresolved system.
+Only ``Teff`` is binary-aware
+    In the cluster likelihood the unresolved-pair ``Teff`` follows the paper's
+    Eq. 23 (total luminosity over total radius) and is mixed with the
+    single-star value by ``fB``.  Other properties (``logg``, ``feh``,
+    ``parallax``, ...) are still compared with the primary's model value in
+    both branches, and ``logL`` is not available as a property.
 
 Coevality is imposed
     Components of a multiple system, and members of a cluster, share age,
