@@ -106,11 +106,27 @@ Both statistics rank the good model above the bad one.  Inputs must be
 non-empty 1-D arrays of the same length (a ``ValueError`` is raised
 otherwise).
 
-.. note::
+To bin a model and an observed CMD on the same Hess grid use ``bin_cmd``.
+``w_goodness_of_fit`` then draws data sets from the model (each bin Poisson
+with mean :math:`m_i`), computes :math:`W` for each, and reports where the
+observed :math:`W` falls:
 
-   Only the statistic itself is provided.  Binning a model CMD and comparing
-   the distribution of :math:`W` for simulated and real data is up to the
-   caller; see :doc:`limitations`.
+.. code-block:: python
+
+    from isochrones.wstat import w_goodness_of_fit
+
+    for name, model in [("good", good), ("bad", bad)]:
+        r = w_goodness_of_fit(model, observed, n_sim=1000, seed=0)
+        print(name, round(r.log_w_observed, 3), round(r.p_value, 3))
+
+.. code-block:: text
+
+    good -29.591 0.914
+    bad -43.135 0.0
+
+``p_value`` is the fraction of simulated data sets with a :math:`W` no larger
+than the observed one, so a small value means the observed CMD matches the
+model worse than model-generated data do.
 
 
 Look at and change the priors
