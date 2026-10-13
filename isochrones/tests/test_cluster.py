@@ -115,7 +115,8 @@ def test_lnlike_prop_layout_is_nstars_by_neep():
         vals_arr[:, i] = vals
         uncs_arr[:, i] = uncs
 
-    mass_lo, mass_hi = model.bounds("mass")
+    # IMF normalised over this isochrone's own mass range (P10).
+    mass_lo, mass_hi = model_masses.min(), model_masses.max()
     grid = calc_lnlike_grid(
         lnlike_prop,
         model_mags,
