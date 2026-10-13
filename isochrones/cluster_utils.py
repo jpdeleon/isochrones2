@@ -126,3 +126,47 @@ def integrate_over_eeps(lnlike_grid, eeps, Nstars):
         likes_marginalized[i] = trapz(row, eeps)
 
     return likes_marginalized
+
+
+def binary_teff(teff: np.ndarray, radius: np.ndarray) -> np.ndarray:
+    """Effective temperature of the unresolved pair (primary j, secondary k).
+
+    Luminosity adds and so do the emitting areas (Valls-Gabaud 2016, Eq. 23),
+    so with ``L = 4 pi sigma R^2 Teff^4`` for each component
+
+        Teff_{j+k}^4 = (R_j^2 Teff_j^4 + R_k^2 Teff_k^4) / (R_j^2 + R_k^2)
+
+    It is not the luminosity-weighted mean of the two temperatures.
+
+    Args:
+        teff: Teff of each EEP, shape ``(Neep,)``.
+        radius: Radius of each EEP, shape ``(Neep,)``.
+
+    Returns:
+        Array of shape ``(Neep, Neep)`` indexed ``[j, k]``.
+    """
+    teff = np.asarray(teff, dtype=float)
+    area = np.asarray(radius, dtype=float) ** 2
+    flux = area * teff**4
+    return ((flux[:, None] + flux[None, :]) / (area[:, None] + area[None, :])) ** 0.25
+
+
+def add_binary_property_term(lnlike_grid, lnlike_sgl, lnlike_bin, fB):
+    """Add the binary-aware property term to the ``(Nstars, Neep, Neep)`` grid.
+
+    The property likelihood of an unresolved system is the mixture
+    ``fB * L_binary(j, k) + (1 - fB) * L_single(j)``, like the photometry.
+
+    Args:
+        lnlike_grid: Output of :func:`calc_lnlike_grid`.
+        lnlike_sgl: Property log-likelihood of the primary alone, ``(Nstars, Neep)``.
+        lnlike_bin: Property log-likelihood of the pair, ``(Nstars, Neep, Neep)``.
+        fB: Binary fraction.
+
+    Returns:
+        New grid; the input is not modified.
+    """
+    with np.errstate(divide="ignore"):
+        ln_fb, ln_fs = np.log(fB), np.log(1.0 - fB)
+    term = np.logaddexp(ln_fb + lnlike_bin, ln_fs + lnlike_sgl[:, :, None])
+    return lnlike_grid + term

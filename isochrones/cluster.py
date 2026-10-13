@@ -25,7 +25,7 @@ from .starmodel import SingleStarModel, BinaryStarModel, TripleStarModel
 from .catalog import StarCatalog
 from .priors import PowerLawPrior, FlatLogPrior, FehPrior, FlatPrior, GaussianPrior
 from .utils import addmags, band_pairs
-from .cluster_utils import calc_lnlike_grid, integrate_over_eeps
+from .cluster_utils import add_binary_property_term, binary_teff, calc_lnlike_grid, integrate_over_eeps
 from .logger import getLogger
 
 
@@ -430,6 +430,7 @@ class StarClusterModel(StarModel):
 
         Nstars = len(self.stars.df)
         lnlike_prop = np.zeros((Nstars, len(eeps)))
+        lnlike_teff_sgl = lnlike_teff_bin = None
         for p, (vals, uncs) in self.stars.iter_props(values=True):
             if p == "parallax":
                 plax = 1000.0 / distance
@@ -437,6 +438,16 @@ class StarClusterModel(StarModel):
             else:
                 model_fn = getattr(self.ic, p)
                 model_vals = model_fn(eeps, age, feh)
+
+            if p == "Teff":
+                # Binary-aware: combined with the secondary's Teff below.
+                radius = self.ic.radius(eeps, age, feh)
+                resid_sgl = vals[:, None] - model_vals[None, :]
+                lnlike_teff_sgl = -0.5 * resid_sgl**2 / uncs[:, None] ** 2
+                model_bin = binary_teff(model_vals, radius)
+                resid_bin = vals[:, None, None] - model_bin[None, :, :]
+                lnlike_teff_bin = -0.5 * resid_bin**2 / uncs[:, None, None] ** 2
+                continue
 
             lnlike_prop += -0.5 * (vals[:, None] - model_vals[None, :]) ** 2 / uncs[:, None] ** 2
 
@@ -480,6 +491,8 @@ class StarClusterModel(StarModel):
             self.minq,
         )
         lnlike_grid = calc_lnlike_grid(*args)
+        if lnlike_teff_bin is not None:
+            lnlike_grid = add_binary_property_term(lnlike_grid, lnlike_teff_sgl, lnlike_teff_bin, fB)
 
         # Integrate over eep1, eep2
         like_tot = integrate_over_eeps(lnlike_grid, eeps, Nstars)
