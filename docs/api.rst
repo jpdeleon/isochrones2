@@ -33,7 +33,7 @@ Posterior summaries
 
 .. automodule:: isochrones.summary
    :members: summary_statistics, mode_of_samples, central_credible_interval,
-             hpd, get_quantiles, get_summary_df
+             hpd, mci_intervals, get_quantiles, get_summary_df
 
 Goodness of fit
 ---------------

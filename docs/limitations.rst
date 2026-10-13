@@ -29,10 +29,12 @@ Secondary-EEP Jacobian in the binary grid
     the binary fraction and the mass posterior.
     *Pinned:* ``test_cluster_mass_ratio_jacobian.py``.
 
-Minimum credible interval is a single interval
-    The paper's MCI can be disconnected.  ``summary.hpd`` returns the
-    shortest single interval, which for a bimodal posterior spans the gap.
-    *Pinned:* ``test_summary_mci_disconnected.py``.
+Minimum credible interval columns are a single interval
+    The paper's MCI can be disconnected.  ``summary.mci_intervals`` returns
+    every connected component, but ``summary.hpd`` and the ``mci_lo_*`` /
+    ``mci_hi_*`` summary columns remain the shortest single interval, which
+    for a bimodal posterior spans the gap.
+    *Tested:* ``test_summary_mci_disconnected.py``.
 
 Goodness of fit is only partly provided
     ``isochrones.wstat`` implements Saha's :math:`W` (both forms).  Binning
