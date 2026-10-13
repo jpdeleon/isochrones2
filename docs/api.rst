@@ -39,7 +39,7 @@ Goodness of fit
 ---------------
 
 .. automodule:: isochrones.wstat
-   :members: log_w, log_w_poisson
+   :members: log_w, log_w_poisson, bin_cmd, w_goodness_of_fit, WGoodnessOfFit
 
 Priors
 ------

@@ -34,10 +34,12 @@ Minimum credible interval is a single interval
     shortest single interval, which for a bimodal posterior spans the gap.
     *Pinned:* ``test_summary_mci_disconnected.py``.
 
-Goodness of fit is only partly provided
-    ``isochrones.wstat`` implements Saha's :math:`W` (both forms).  Binning
-    model and observed CMDs, and comparing :math:`W` for simulated and real
-    data, are left to the caller.
+Goodness of fit needs a model CMD
+    ``isochrones.wstat`` implements Saha's :math:`W` (both forms), CMD
+    binning (``bin_cmd``) and the simulated-vs-real comparison
+    (``w_goodness_of_fit``).  Producing the *model* counts :math:`m_i` for a
+    fitted cluster, for example by drawing stars from the posterior, is left
+    to the caller.
 
 No correlated uncertainties
     All Gaussian likelihood terms are independent per band or property; the
