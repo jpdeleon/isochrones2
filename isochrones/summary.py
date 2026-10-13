@@ -74,7 +74,10 @@ def hpd(x: np.ndarray, alpha: float = 0.95) -> Tuple[float, float]:
     The MCI is the shortest interval enclosing a fraction ``alpha`` of the
     samples, built so the posterior PDF is always larger inside than
     outside.  For a bounded/unimodal 1D posterior this coincides with the
-    highest-density interval and always contains the mode.
+    highest-density interval and always contains the mode.  For a
+    multimodal posterior the MCI is disconnected and this single interval
+    spans the gap between modes; use :func:`mci_intervals` to get every
+    component.
 
     Args:
         x: 1D array of samples.
@@ -91,6 +94,83 @@ def hpd(x: np.ndarray, alpha: float = 0.95) -> Tuple[float, float]:
     spans = x[n_alpha - 1 :] - x[: x.size - n_alpha + 1]
     i = int(np.argmin(spans))
     return float(x[i]), float(x[i + n_alpha - 1])
+
+
+_CV_FACTOR_SCALES = (0.03, 0.06, 0.12, 0.25, 0.5, 1.0)
+_CV_MAX_SAMPLES = 2000
+
+
+def _cv_bandwidth_factor(x: np.ndarray) -> float:
+    """Gaussian-KDE bandwidth factor chosen by leave-one-out likelihood.
+
+    Scott's rule uses the overall standard deviation, which oversmooths
+    well-separated modes into one broad bump and so merges the components of
+    a disconnected MCI.  The factor is picked from a few multiples of Scott's
+    value by maximising the leave-one-out log-likelihood on a subsample.
+    """
+    rng = np.random.default_rng(0)
+    if x.size > _CV_MAX_SAMPLES:
+        x = rng.choice(x, size=_CV_MAX_SAMPLES, replace=False)
+    n = x.size
+    std = x.std(ddof=1)
+    scott = n ** (-1.0 / 5.0)
+    best_factor, best_score = scott, -np.inf
+    for scale in _CV_FACTOR_SCALES:
+        factor = scale * scott
+        h = factor * std
+        kde = gaussian_kde(x, bw_method=factor)
+        self_term = 1.0 / (np.sqrt(2.0 * np.pi) * h * n)
+        loo = (kde(x) - self_term) * n / (n - 1)
+        score = np.log(np.maximum(loo, 1e-300)).sum()
+        if score > best_score:
+            best_factor, best_score = factor, score
+    return best_factor
+
+
+def mci_intervals(x: np.ndarray, alpha: float = 0.95, grid_size: int = 2000) -> List[Tuple[float, float]]:
+    """Minimum credible interval (MCI) as a list of disjoint intervals.
+
+    The MCI is the set where the posterior PDF exceeds the level enclosing a
+    fraction ``alpha`` of the posterior volume, so the PDF is larger inside
+    than outside.  For a multimodal posterior this set is not connected
+    (vallsgabaud2016, Sec. 3); :func:`hpd` instead returns the shortest single
+    interval holding ``alpha`` of the samples, which spans the gaps.
+
+    The PDF is a Gaussian KDE of the samples evaluated on a regular grid, so
+    the interval edges are resolved to the grid spacing.
+
+    Args:
+        x: 1D array of samples.
+        alpha: Posterior fraction enclosed (default 0.95).
+        grid_size: Number of points for the KDE evaluation grid.
+
+    Returns:
+        List of ``(low, high)`` tuples in increasing order, one per connected
+        component.  Empty if ``x`` has no finite samples.
+    """
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    if x.size == 0:
+        return []
+    if np.ptp(x) == 0.0:
+        return [(float(x[0]), float(x[0]))]
+
+    kde = gaussian_kde(x, bw_method=_cv_bandwidth_factor(x))
+    pad = 3.0 * kde.factor * x.std(ddof=1)
+    grid = np.linspace(x.min() - pad, x.max() + pad, grid_size)
+    pdf = kde(grid)
+    mass = pdf * (grid[1] - grid[0])
+    mass = mass / mass.sum()
+
+    order = np.argsort(pdf)[::-1]
+    n_keep = int(np.searchsorted(np.cumsum(mass[order]), alpha)) + 1
+    inside = np.zeros(grid.size, dtype=bool)
+    inside[order[:n_keep]] = True
+
+    edges = np.diff(np.concatenate(([0], inside.astype(int), [0])))
+    starts = np.flatnonzero(edges == 1)
+    stops = np.flatnonzero(edges == -1) - 1
+    return [(float(grid[a]), float(grid[b])) for a, b in zip(starts, stops)]
 
 
 def summary_statistics(x: np.ndarray, qs: Optional[List[float]] = None, alpha: float = 0.95) -> Dict[str, float]:
