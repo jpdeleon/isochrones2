@@ -15,7 +15,6 @@ Offline: calls ``calc_lnlike_grid`` / ``integrate_over_eeps`` directly.
 """
 
 import numpy as np
-import pytest
 
 from isochrones.cluster_utils import calc_lnlike_grid, integrate_over_eeps
 
@@ -47,23 +46,15 @@ def _single_branch_marginal(n, slope):
 
     phi = 1.0 / (mass_hi - M0)
     p_j = (1.0 - M0 / masses) / (1.0 - Q_LO)
-    ref = np.trapz(slope * phi * p_j, eeps)
+    ref = np.trapezoid(slope * phi * p_j, eeps)
     return got, ref
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="P11 (#1): secondary EEP integral lacks the dm_k/dEEP_k / m_j Jacobian",
-)
 def test_single_branch_marginal_matches_analytic_mass_ratio_integral():
     got, ref = _single_branch_marginal(n=61, slope=0.02)
     assert np.isclose(got, ref, rtol=2e-2)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="P11 (#1): result depends on how finely the EEP grid samples the same mass range",
-)
 def test_single_branch_marginal_independent_of_eep_grid_resolution():
     # Same mass range 0.8 -> 1.6, sampled with 31 vs 61 EEP steps.
     coarse, _ = _single_branch_marginal(n=31, slope=0.8 / 30)

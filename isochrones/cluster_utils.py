@@ -97,8 +97,10 @@ def calc_lnlike_grid(
                     lnlike_mass = powerlaw_lnpdf(masses[j], alpha, mass_lo, mass_hi)
                     lnlike_mass += ln_dm_deeps[j]
 
-                    # ln(likelihood) for mass ratio
+                    # ln(likelihood) for mass ratio, as a density in EEP_k:
+                    #   p(q) dq = p(q) * (dm_k/dEEP_k) / m_j dEEP_k   (q = m_k / m_j)
                     lnlike_mass_ratio = powerlaw_lnpdf(masses[k] / masses[j], gamma, q_lo, 1.0)
+                    lnlike_mass_ratio += ln_dm_deeps[k] - log(masses[j])
 
                     lnlikes[i, j, k] = lnlike_phot + lnlike_mass + lnlike_mass_ratio + lnlike_prop[i, j]
 

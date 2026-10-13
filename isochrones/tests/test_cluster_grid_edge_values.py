@@ -49,7 +49,8 @@ def _expected_cell(model_mags, masses, j, k, fB):
     with np.errstate(divide="ignore"):
         phot = np.logaddexp(np.log(fB) + binary, np.log(1 - fB) + single)
     mass = powerlaw_lnpdf(masses[j], ALPHA, MASS_LO, MASS_HI)
-    ratio = powerlaw_lnpdf(masses[k] / masses[j], GAMMA, Q_LO, 1.0)
+    # Density per unit EEP_k: times (dm_k/dEEP_k) / m_j, with ln dm/dEEP = 0.
+    ratio = powerlaw_lnpdf(masses[k] / masses[j], GAMMA, Q_LO, 1.0) - math.log(masses[j])
     return phot + mass + ratio
 
 
